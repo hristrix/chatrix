@@ -102,18 +102,33 @@ public final class UnicodeEmojiParser {
             return start;
         }
 
+        // Subdivision flags use BLACK FLAG, tag letters, then CANCEL TAG.
+        if (cp == 0x1F3F4) {
+            int cursor = end;
+            while (cursor < text.length()) {
+                int tag = text.codePointAt(cursor);
+                if (tag < 0xE0020 || tag > 0xE007E) {
+                    break;
+                }
+                cursor += Character.charCount(tag);
+            }
+            if (cursor > end && cursor < text.length() && text.codePointAt(cursor) == 0xE007F) {
+                return cursor + Character.charCount(0xE007F);
+            }
+        }
+
         while (end < text.length()) {
             int next = text.codePointAt(end);
             if (next == 0x200D) {
-                end += Character.charCount(next);
-                if (end >= text.length()) {
+                int joinedStart = end + Character.charCount(next);
+                if (joinedStart >= text.length()) {
                     break;
                 }
-                int afterZwj = text.codePointAt(end);
+                int afterZwj = text.codePointAt(joinedStart);
                 if (!isEmojiStarter(afterZwj)) {
                     break;
                 }
-                end += Character.charCount(afterZwj);
+                end = joinedStart + Character.charCount(afterZwj);
                 continue;
             }
             if (next == 0xFE0F || isSkinToneModifier(next)) {

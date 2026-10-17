@@ -17,8 +17,8 @@ import java.util.List;
  */
 final class TikTokEmoteParser {
     static final String PROVIDER = "tiktok";
-    /** {@code repeated EmoteWithIndex} fields in {@code WebcastChatMessage}, usually field 13. */
-    private static final int[] EMOTE_LIST_FIELDS = {13, 14, 15, 16, 17, 18};
+    /** WebcastChatMessage.emotesWithIndex; field 14 is the comment language, not an emote. */
+    private static final int EMOTE_LIST_FIELD = 13;
 
     private TikTokEmoteParser() {}
 
@@ -44,15 +44,21 @@ final class TikTokEmoteParser {
             return List.of();
         }
         List<SubEmoteEntry> entries = new ArrayList<>();
-        for (int field : EMOTE_LIST_FIELDS) {
-            for (TikTokProto.ProtoMap subEmote : chat.getRepeatedMessages(field)) {
-                int place = subEmote.getInt(1);
-                String cacheKey = resolveCacheKey(subEmote.getMessage(2));
-                if (cacheKey == null) {
-                    continue;
+        try {
+            for (TikTokProto.ProtoMap subEmote : chat.getRepeatedMessages(EMOTE_LIST_FIELD)) {
+                try {
+                    int place = subEmote.getInt(1);
+                    String cacheKey = resolveCacheKey(subEmote.getMessage(2));
+                    if (cacheKey == null) {
+                        continue;
+                    }
+                    entries.add(new SubEmoteEntry(place, cacheKey));
+                } catch (IllegalArgumentException ignored) {
+                    // Optional sticker details must never discard the comment text.
                 }
-                entries.add(new SubEmoteEntry(place, cacheKey));
             }
+        } catch (IllegalArgumentException ignored) {
+            // Ignore malformed optional emote lists and keep the original comment.
         }
         if (entries.isEmpty()) {
             return List.of();

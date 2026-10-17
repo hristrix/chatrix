@@ -16,9 +16,10 @@ public class TikTokStateCheck {
 
     public static void run() throws Exception {
         AtomicInteger confirmations = new AtomicInteger();
+        java.util.ArrayList<String> comments = new java.util.ArrayList<>();
         var handler = new TikTokWebSocket.ChatHandler() {
             public void onConnected() { confirmations.incrementAndGet(); }
-            public void onChat(long id, String user, String name, String text, ChatAuthorRoles roles, List<MessageEmote> emotes) {}
+            public void onChat(long id, String user, String name, String text, ChatAuthorRoles roles, List<MessageEmote> emotes) { comments.add(text); }
             public void onGift(long id, String user, String name, String gift, int count) {}
             public void onFollow(long id, String user, String name) {}
             public void onSubscribe(long id, String user, String name) {}
@@ -42,6 +43,25 @@ public class TikTokStateCheck {
         listener.onBinary(peer, ByteBuffer.wrap(frame), true);
         listener.onBinary(peer, ByteBuffer.wrap(frame), true);
         check(socket.isConnected() && confirmations.get() == 1, "Valid feed did not confirm exactly once");
+        // Real LIVE comments carry a plain language string in field 14. Treating it
+        // as a protobuf emote used to throw and silently discard every comment.
+        for (String language : new String[] {"bg", "en", "ja"}) {
+            byte[] chat = TikTokProto.encode(w -> { w.writeString(3, "Здравей 👋"); w.writeString(14, language); });
+            deliverChat(listener, peer, chat);
+        }
+        byte[] malformedEmotes = TikTokProto.encode(w -> {
+            w.writeString(3, "keep this comment");
+            w.writeBytes(13, new byte[] {10, 127});
+        });
+        deliverChat(listener, peer, malformedEmotes);
+        check(comments.equals(List.of("Здравей 👋", "Здравей 👋", "Здравей 👋", "keep this comment")),
+            "Comment language or malformed optional emotes discarded chat text");
+        byte[] details = TikTokProto.encode(w -> w.writeString(1, "sticker-id"));
+        byte[] indexed = TikTokProto.encode(w -> { w.writeInt32(1, 0); w.writeBytes(2, details); });
+        byte[] stickerChat = TikTokProto.encode(w -> { w.writeString(3, "[hi]"); w.writeBytes(13, indexed); w.writeString(14, "en"); });
+        var parsedEmotes = TikTokEmoteParser.parseChatEmotes(TikTokProto.decode(stickerChat), "[hi]");
+        check(parsedEmotes.size() == 1 && parsedEmotes.get(0).getStartIndex() == 0,
+            "Valid inline TikTok sticker was lost");
         listener.onClose(peer, 1000, "ended");
         check(!socket.isConnected() && !socket.isRunning(), "Closed TikTok feed remained connected");
         socket.disconnect();
@@ -56,6 +76,13 @@ public class TikTokStateCheck {
         ((WebSocket.Listener) ctor.newInstance(failed)).onError(new FakeSocket(), new java.io.IOException("test failure"));
         check(!failed.isConnected() && !failed.isRunning() && failed.getFailure() != null, "Failed TikTok feed remained connected");
         System.out.println("TikTok handshake/feed confirmation, close, errors, and cancellation: PASS");
+    }
+
+    private static void deliverChat(WebSocket.Listener listener, WebSocket peer, byte[] chat) {
+        byte[] message = TikTokProto.encode(w -> { w.writeString(1, "WebcastChatMessage"); w.writeBytes(2, chat); });
+        byte[] response = TikTokProto.encode(w -> w.writeBytes(1, message));
+        byte[] frame = TikTokProto.encode(w -> { w.writeString(7, "msg"); w.writeBytes(8, response); });
+        listener.onBinary(peer, ByteBuffer.wrap(frame), true);
     }
 
     private static class FakeSocket implements WebSocket {

@@ -167,9 +167,8 @@ public final class EmojiTextureCache {
             }
         }
         Class<?> awtGlyphClass = Class.forName(AWT_GLYPH_TYPE);
-        int plainStyle = awtGlyphClass.getField("PLAIN").getInt(null);
-        int sansSerif = awtGlyphClass.getField("SANS_SERIF").getInt(null);
-        return createAwtGlyph(sansSerif, plainStyle, GLYPH_SIZE);
+        String sansSerif = (String) awtGlyphClass.getField("SANS_SERIF").get(null);
+        return createAwtGlyph(sansSerif, GLYPH_SIZE);
     }
 
     private static Object createAwtGlyph(String family, int size) throws ReflectiveOperationException {
@@ -177,12 +176,6 @@ public final class EmojiTextureCache {
         int plainStyle = awtGlyphClass.getField("PLAIN").getInt(null);
         Constructor<?> ctor = awtGlyphClass.getConstructor(String.class, int.class, int.class);
         return ctor.newInstance(family, plainStyle, size);
-    }
-
-    private static Object createAwtGlyph(int familyConstant, int style, int size) throws ReflectiveOperationException {
-        Class<?> awtGlyphClass = Class.forName(AWT_GLYPH_TYPE);
-        Constructor<?> ctor = awtGlyphClass.getConstructor(int.class, int.class, int.class);
-        return ctor.newInstance(familyConstant, style, size);
     }
 
     private static String[] emojiGlyphFamilies() {
