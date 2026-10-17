@@ -1,0 +1,132 @@
+package com.hristrix.chatrix.integration.chat;
+
+import com.hristrix.chatrix.messages.MessageEmote;
+
+import java.util.Collections;
+import java.util.List;
+
+public record IncomingChatMessage(
+    ChatPlatform platform,
+    String authorLogin,
+    String displayName,
+    String text,
+    Integer authorColorRgb,
+    List<MessageEmote> emotes,
+    ChatAuthorRoles roles,
+    String twitchRoomId,
+    String twitchChannelName,
+    String twitchEmotesTag,
+    /** IRC {@code gifs} tag: comma-separated {@code start-end|id|url} entries. */
+    String twitchGifsTag,
+    /** Unix message timestamp in microseconds (YouTube {@code timestampUsec}); null means display immediately. */
+    Long sourceTimestampMicros,
+    ChatEventType eventType
+) {
+    public IncomingChatMessage {
+        emotes = emotes != null ? emotes : Collections.emptyList();
+        roles = roles != null ? roles : ChatAuthorRoles.NONE;
+        eventType = eventType != null ? eventType : ChatEventType.CHAT;
+    }
+
+    public static Builder builder(ChatPlatform platform) {
+        return new Builder(platform);
+    }
+
+    public static final class Builder {
+        private final ChatPlatform platform;
+        private String authorLogin = "";
+        private String displayName = "";
+        private String text = "";
+        private Integer authorColorRgb;
+        private List<MessageEmote> emotes = Collections.emptyList();
+        private ChatAuthorRoles roles = ChatAuthorRoles.NONE;
+        private String twitchRoomId;
+        private String twitchChannelName;
+        private String twitchEmotesTag;
+        private String twitchGifsTag;
+        private Long sourceTimestampMicros;
+        private ChatEventType eventType = ChatEventType.CHAT;
+
+        private Builder(ChatPlatform platform) {
+            this.platform = platform;
+        }
+
+        public Builder authorLogin(String authorLogin) {
+            this.authorLogin = authorLogin;
+            return this;
+        }
+
+        public Builder displayName(String displayName) {
+            this.displayName = displayName;
+            return this;
+        }
+
+        public Builder text(String text) {
+            this.text = text;
+            return this;
+        }
+
+        public Builder authorColorRgb(Integer authorColorRgb) {
+            this.authorColorRgb = authorColorRgb;
+            return this;
+        }
+
+        public Builder emotes(List<MessageEmote> emotes) {
+            this.emotes = emotes;
+            return this;
+        }
+
+        public Builder roles(ChatAuthorRoles roles) {
+            this.roles = roles;
+            return this;
+        }
+
+        public Builder twitchRoomId(String twitchRoomId) {
+            this.twitchRoomId = twitchRoomId;
+            return this;
+        }
+
+        public Builder twitchChannelName(String twitchChannelName) {
+            this.twitchChannelName = twitchChannelName;
+            return this;
+        }
+
+        public Builder twitchEmotesTag(String twitchEmotesTag) {
+            this.twitchEmotesTag = twitchEmotesTag;
+            return this;
+        }
+
+        public Builder twitchGifsTag(String twitchGifsTag) {
+            this.twitchGifsTag = twitchGifsTag;
+            return this;
+        }
+
+        public Builder sourceTimestampMicros(Long sourceTimestampMicros) {
+            this.sourceTimestampMicros = sourceTimestampMicros;
+            return this;
+        }
+
+        public Builder eventType(ChatEventType eventType) {
+            this.eventType = eventType;
+            return this;
+        }
+
+        public IncomingChatMessage build() {
+            return new IncomingChatMessage(
+                platform,
+                authorLogin,
+                displayName,
+                text,
+                authorColorRgb,
+                emotes,
+                roles,
+                twitchRoomId,
+                twitchChannelName,
+                twitchEmotesTag,
+                twitchGifsTag,
+                sourceTimestampMicros,
+                eventType
+            );
+        }
+    }
+}

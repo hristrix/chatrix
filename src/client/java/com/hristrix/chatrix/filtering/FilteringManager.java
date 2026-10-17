@@ -1,0 +1,110 @@
+package com.hristrix.chatrix.filtering;
+
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import net.fabricmc.loader.api.FabricLoader;
+import com.hristrix.chatrix.ChatrixClient;
+
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.InputStreamReader;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+public class FilteringManager {
+    private static final String USER_FILE_NAME = "chatrix-regexps.json";
+
+    private static FilteringManager instance;
+
+    private final Set<String> regexps = new HashSet<>();
+
+    private FilteringManager() {
+        loadRegexp();
+    }
+
+    public static FilteringManager getInstance() {
+        if (instance == null) {
+            instance = new FilteringManager();
+        }
+        return instance;
+    }
+
+    public void loadRegexp() {
+        try {
+            Path userFile = FabricLoader.getInstance().getConfigDir().resolve(USER_FILE_NAME);
+            if (!Files.exists(userFile)) {
+                try (FileWriter writer = new FileWriter(String.valueOf(userFile))) {
+                    writer.write("[]");
+                }
+            }
+            try (InputStreamReader reader = new InputStreamReader(Files.newInputStream(userFile), StandardCharsets.UTF_8)) {
+                Type listType = new TypeToken<List<String>>(){}.getType();
+                List<String> userWords = new Gson().fromJson(reader, listType);
+                if (userWords != null) {
+                    for (String w : userWords) {
+                        if (w != null) regexps.add(w);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            ChatrixClient.LOGGER.error("Failed to load user regex filters", e);
+        }
+    }
+
+    public boolean fitsRegexp(String message) {
+        if (message == null || message.isEmpty() || regexps.isEmpty()) {
+            return false;
+        }
+        String lowerCaseMessage = message.toLowerCase();
+        for (String pattern : regexps) {
+            if (pattern != null && !pattern.isEmpty()) {
+                try {
+                    if (lowerCaseMessage.matches(pattern)) {
+                        return true;
+                    }
+                } catch (Exception e) {
+                    ChatrixClient.LOGGER.warn("Invalid regexp filter '{}': {}", pattern, e.getMessage());
+                }
+            }
+        }
+        return false;
+    }
+
+    public void addRegexp(String regexp) {
+        if (regexp != null) {
+            regexps.add(regexp);
+            saveUserRegexps();
+        }
+    }
+
+    public void removeRegexp(String regexp) {
+        if (regexp != null) {
+            boolean removed = regexps.remove(regexp);
+            if (removed) {
+                saveUserRegexps();
+            }
+        }
+    }
+
+    public Set<String> getRegexps() {
+        return Collections.unmodifiableSet(regexps);
+    }
+
+    private void saveUserRegexps() {
+        try {
+            Path userFile = FabricLoader.getInstance().getConfigDir().resolve(USER_FILE_NAME);
+            List<String> list = regexps.stream().sorted().toList();
+            try (BufferedWriter writer = Files.newBufferedWriter(userFile, StandardCharsets.UTF_8)) {
+                new Gson().toJson(list, writer);
+            }
+        } catch (Exception e) {
+            ChatrixClient.LOGGER.error("Failed to save user regex filters: {}", e.getMessage());
+        }
+    }
+}

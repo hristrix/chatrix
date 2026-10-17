@@ -1,0 +1,89 @@
+package com.hristrix.chatrix;
+
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import com.hristrix.chatrix.config.ModConfig;
+import com.hristrix.chatrix.messages.MessageSpawner;
+import com.hristrix.chatrix.messages.PinnedMessageStore;
+import com.hristrix.chatrix.utils.Logger;
+
+public class WorldEventHandler {
+    private static String lastDimensionKey;
+
+    public static void register(MessageSpawner messageSpawner) {
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            onWorldJoin(messageSpawner);
+            if (client.world != null) {
+                lastDimensionKey = client.world.getRegistryKey().getValue().toString();
+            }
+        });
+
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            onWorldLeave(messageSpawner);
+            lastDimensionKey = null;
+        });
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client == null || client.world == null || messageSpawner == null) {
+                return;
+            }
+
+            String currentDimensionKey = client.world.getRegistryKey().getValue().toString();
+            if (lastDimensionKey == null) {
+                lastDimensionKey = currentDimensionKey;
+                return;
+            }
+
+            if (!lastDimensionKey.equals(currentDimensionKey)) {
+                PinnedMessageStore.saveForDimension(messageSpawner.getLifecycleManager(), lastDimensionKey);
+                messageSpawner.getLifecycleManager().removeMessagesOutsideDimension(currentDimensionKey);
+                lastDimensionKey = currentDimensionKey;
+                PinnedMessageStore.loadForCurrentWorld(messageSpawner.getLifecycleManager());
+                Logger.info("Dimension changed, pinned messages reloaded for " + currentDimensionKey);
+            }
+        });
+
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            if (messageSpawner != null) {
+                var app = ChatrixClient.getInstance();
+                if (app != null && app.getChatConnectionManager() != null && app.getChatConnectionManager().isConnected()) {
+                    app.getChatConnectionManager().disconnect();
+                }
+                PinnedMessageStore.saveForCurrentWorld(messageSpawner.getLifecycleManager());
+                messageSpawner.pause();
+                ChatrixClient.LOGGER.info("Message system on pause");
+            }
+        });
+    }
+
+    public static void onWorldJoin(MessageSpawner messageSpawner) {
+        if (messageSpawner != null) {
+            if (messageSpawner.isPaused()) {
+                messageSpawner.resume();
+                ChatrixClient.LOGGER.info("Message system unpaused (entered world)");
+            }
+            PinnedMessageStore.loadForCurrentWorld(messageSpawner.getLifecycleManager());
+
+            var app = ChatrixClient.getInstance();
+            if (ModConfig.isAUTO_CONNECT_IRC_ON_JOIN()
+                && app != null
+                && app.getChatConnectionManager() != null
+                && !app.getChatConnectionManager().isConnected()) {
+                app.getChatConnectionManager().connect(messageSpawner);
+            }
+        }
+    }
+
+    public static void onWorldLeave(MessageSpawner messageSpawner) {
+        if (messageSpawner != null && !messageSpawner.isPaused()) {
+            var app = ChatrixClient.getInstance();
+            if (app != null && app.getChatConnectionManager() != null && app.getChatConnectionManager().isConnected()) {
+                app.getChatConnectionManager().disconnect();
+            }
+            PinnedMessageStore.saveForCurrentWorld(messageSpawner.getLifecycleManager());
+            messageSpawner.pause();
+            ChatrixClient.LOGGER.info("Message system paused (left world)");
+        }
+    }
+}

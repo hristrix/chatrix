@@ -1,0 +1,353 @@
+package com.hristrix.chatrix.messages;
+
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.OrderedText;
+import com.hristrix.chatrix.config.ModConfig;
+import com.hristrix.chatrix.core.MessagePanelConstants;
+import com.hristrix.chatrix.core.text.LegacySectionText;
+import net.minecraft.util.math.RotationAxis;
+
+import java.util.List;
+import net.minecraft.util.Identifier;
+import org.joml.Matrix4f;
+import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.util.math.Vec3d;
+import com.hristrix.chatrix.utils.CameraPositionCompat;
+import com.hristrix.chatrix.utils.RenderLayerCompat;
+import com.hristrix.chatrix.core.render.MessagePanelWorldRenderer;
+
+/**
+ * Renders messages in the world.
+ */
+public class MessageRenderer {
+    private final MessageLifecycleManager lifecycleManager;
+    private final MessageParticleManager particleManager;
+    private final java.util.WeakHashMap<Message, MessageRenderSmoothing> smoothing = new java.util.WeakHashMap<>();
+    /** Draws the editor cube after all messages so its depth does not hide text drawn later. */
+    private org.joml.Matrix4f pendingBlockCube;
+
+    private static final float PIN_ICON_Z_OFFSET = -0.02f;
+    private static final int EMOTE_ICON_SPACING = 1;
+    private static final float EMOTE_ICON_Z_OFFSET = 0.02f;
+    public MessageRenderer(MessageLifecycleManager lifecycleManager, MessageParticleManager particleManager) {
+        this.lifecycleManager = lifecycleManager;
+        this.particleManager = particleManager;
+        
+        WorldRenderEvents.AFTER_ENTITIES.register(context -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player == null || client.world == null) return;
+            
+            // Do not render 3D messages in HUD mode.
+            var spawnMode = com.hristrix.chatrix.config.ModConfig.getMESSAGE_SPAWN_MODE();
+            if (spawnMode == com.hristrix.chatrix.config.MessageSpawnMode.HUD_WIDGET) {
+                return;
+            }
+
+            MatrixStack matrices = context.matrices();
+            TextRenderer textRenderer = client.textRenderer;
+            VertexConsumerProvider consumers = context.consumers();
+
+            List<Message> activeMessages = lifecycleManager.getActiveMessages();
+
+            for (Message message : activeMessages) {
+                if (!PinnedMessageStore.belongsToCurrentWorld(message, client)) {
+                    continue;
+                }
+                renderMessage(client, message, matrices, textRenderer, consumers);
+            }
+            // Render particles.
+            if (particleManager != null) {
+                particleManager.render(client, matrices, consumers);
+            }
+            if (pendingBlockCube != null) {
+                MessagePanelWorldRenderer.drawBlockCube(pendingBlockCube, consumers);
+                pendingBlockCube = null;
+            }
+        });
+    }
+    
+    /**
+     * Renders one message.
+     */
+    private void renderMessage(MinecraftClient client, Message message, MatrixStack matrices, 
+                             TextRenderer textRenderer, VertexConsumerProvider consumers) {
+        matrices.push();
+
+        int tickCounter = lifecycleManager.getTickCounter();
+        int age = message.isPinned() ? 0 : message.getEffectiveAge(tickCounter);
+        float fallOffsetY = MessagePanelLayout.fallOffsetY(age);
+        int fallTicks = ModConfig.getMESSAGE_FALL_TICKS();
+        int fallStart = ModConfig.getMESSAGE_LIFETIME_TICKS();
+        int fallAge = age - fallStart;
+        if (fallAge >= fallTicks) {
+            // The message has already shattered and should no longer be displayed.
+            matrices.pop();
+            return;
+        }
+
+        // Extra-smooth frame-based interpolation during rendering.
+        MessageRenderSmoothing state = smoothing.computeIfAbsent(message, MessageRenderSmoothing::fromMessage);
+        state.updateTowards(message);
+
+        Vec3d cameraPos = CameraPositionCompat.getCameraPos(client);
+
+        matrices.translate(
+            state.pos().x - cameraPos.getX(),
+            state.pos().y - cameraPos.getY(),
+            state.pos().z - cameraPos.getZ()
+        );
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-state.yaw()));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(state.pitch()));
+        if (message.isPreview() && message.hasBlockCube()) {
+            pendingBlockCube = new org.joml.Matrix4f(matrices.peek().getPositionMatrix());
+        }
+        
+        // Apply the configured scale.
+        float finalScale = MessagePanelLayout.worldScale();
+        matrices.scale(finalScale, -finalScale, finalScale);
+
+        MessagePanelLayout.Dimensions layout = message.getWorldLayout(textRenderer);
+        int maxTextWidth = layout.maxTextWidth();
+        float totalTextHeight = layout.totalTextHeight();
+        int panelWidth = layout.panelWidth();
+        int panelHeight = layout.panelHeight();
+        String platformIconKey = message.getPlatformIconKey();
+        int iconOffset = layout.firstLineIconOffset();
+
+        boolean hasEmotes = message.hasInlineEmotes();
+        List<EmoteTextLayout.LineContent> emoteLines = hasEmotes
+            ? message.getEmoteLines(textRenderer)
+            : java.util.Collections.emptyList();
+        List<OrderedText> wrappedText = hasEmotes
+            ? java.util.Collections.emptyList()
+            : textRenderer.wrapLines(LegacySectionText.parse(message.getText()), MessagePanelLayout.wrapWidth());
+        // Center text and panel, then apply the fall offset.
+        matrices.translate(-maxTextWidth / 2.0f, -totalTextHeight / 2.0f + fallOffsetY, 0f);
+        // Render the panel if enabled.
+        if (ModConfig.isSHOW_MESSAGE_BACKGROUND()) {
+            MessagePanelWorldRenderer.drawPanelWithBorder(
+                matrices,
+                consumers,
+                -MessagePanelConstants.PADDING_X,
+                -MessagePanelConstants.PADDING_Y,
+                panelWidth,
+                panelHeight,
+                1.0f,
+                com.hristrix.chatrix.integration.chat.ChatPlatform.accentColorForIconKey(platformIconKey)
+            );
+        }
+        matrices.translate(0f, 0f, 0.1f);
+        // Render text.
+        int alphaInt = 0xFF << 24;
+        int color = (0xFFFFFF) | alphaInt;
+        renderIconRow(matrices, consumers, message);
+        if (hasEmotes) {
+            float lineY = 0.0f;
+            int gifSize = layout.gifDisplaySize();
+            boolean sawContent = false;
+            for (int i = 0; i < emoteLines.size(); i++) {
+                EmoteTextLayout.LineContent line = emoteLines.get(i);
+                if (line.isGifLine()) {
+                    if (sawContent) {
+                        lineY += MessageEmote.GIF_LINE_GAP;
+                    }
+                    float gifX = (maxTextWidth - gifSize) / 2.0f;
+                    renderLineWithEmotes(
+                        matrices,
+                        textRenderer,
+                        consumers,
+                        line.text(),
+                        line.emotes(),
+                        color,
+                        gifX,
+                        lineY,
+                        gifSize
+                    );
+                    lineY += gifSize;
+                } else {
+                    renderLineWithEmotes(
+                        matrices,
+                        textRenderer,
+                        consumers,
+                        line.text(),
+                        line.emotes(),
+                        color,
+                        i == 0 ? iconOffset : 0.0f,
+                        lineY,
+                        0
+                    );
+                    lineY += line.hasEmotes() ? MessageEmote.maxIconSize(line.emotes()) + 1 : textRenderer.fontHeight;
+                }
+                sawContent = true;
+            }
+        } else {
+            for (int i = 0; i < wrappedText.size(); i++) {
+                textRenderer.draw(wrappedText.get(i),
+                                i == 0 ? (float) iconOffset : 0.0F,
+                                (float)i * textRenderer.fontHeight,
+                                color,
+                                true,
+                                matrices.peek().getPositionMatrix(),
+                                consumers,
+                                TextRenderer.TextLayerType.POLYGON_OFFSET,
+                                0,
+                                0xF000F0
+                                );
+            }
+        }
+        if (message.isPinned()) {
+            renderPinIcon(matrices, panelWidth, consumers);
+        }
+        matrices.pop();
+    }
+
+    private void renderPinIcon(MatrixStack matrices, int panelWidth, VertexConsumerProvider consumers) {
+        VertexConsumer consumer = RenderLayerCompat.getEntityBuffer(consumers, MessagePanelConstants.PIN_TEXTURE);
+        Matrix4f mat = matrices.peek().getPositionMatrix();
+
+        int markerX = panelWidth - MessagePanelConstants.PADDING_X - (MessagePanelConstants.PIN_ICON_SIZE / 2) + MessagePanelConstants.PIN_ICON_MARGIN;
+        int markerY = -MessagePanelConstants.PADDING_Y - (MessagePanelConstants.PIN_ICON_SIZE / 2) - MessagePanelConstants.PIN_ICON_MARGIN;
+        float u0 = 0f;
+        float v0 = 0f;
+        float u1 = 1f;
+        float v1 = 1f;
+        drawQuadIcon(consumer, mat, markerX, markerY, markerX + MessagePanelConstants.PIN_ICON_SIZE, markerY + MessagePanelConstants.PIN_ICON_SIZE, PIN_ICON_Z_OFFSET, u0, v0, u1, v1);
+    }
+
+    /** Platform icon and role badges before the username. */
+    private void renderIconRow(MatrixStack matrices, VertexConsumerProvider consumers, Message message) {
+        Matrix4f mat = matrices.peek().getPositionMatrix();
+        int iconX = 0;
+        String platformIconKey = message.getPlatformIconKey();
+        if (platformIconKey != null) {
+            Identifier texture = TwitchEmoteTextureCache.getTextureIdentifier("platform", platformIconKey);
+            if (texture != null) {
+                drawQuadIcon(
+                    RenderLayerCompat.getTextBuffer(consumers, texture),
+                    mat,
+                    iconX,
+                    0,
+                    iconX + MessagePanelLayout.PLATFORM_ICON_SIZE,
+                    MessagePanelLayout.PLATFORM_ICON_SIZE,
+                    EMOTE_ICON_Z_OFFSET,
+                    0f, 0f, 1f, 1f
+                );
+            }
+            iconX += MessagePanelLayout.PLATFORM_ICON_SIZE + MessagePanelLayout.EMOTE_ICON_SPACING;
+        }
+        for (String badgeKey : message.getRoleBadgeKeys()) {
+            drawQuadIcon(
+                RenderLayerCompat.getTextBuffer(consumers, RoleBadges.iconTexture(badgeKey)),
+                mat,
+                iconX,
+                0,
+                iconX + RoleBadges.ICON_SIZE,
+                RoleBadges.ICON_SIZE,
+                EMOTE_ICON_Z_OFFSET,
+                0f, 0f, 1f, 1f
+            );
+            iconX += RoleBadges.ICON_SIZE + RoleBadges.WORLD_SPACING;
+        }
+    }
+
+    private void drawQuadIcon(VertexConsumer consumer, Matrix4f mat, int x0, int y0, int x1, int y1, float z, float u0, float v0, float u1, float v1) {
+        int light = 0xF000F0;
+        int overlay = OverlayTexture.DEFAULT_UV;
+        consumer.vertex(mat, x0, y0, z).color(1f, 1f, 1f, 1.0f).texture(u0, v0).overlay(overlay).light(light).normal(0, 0, -1);
+        consumer.vertex(mat, x0, y1, z).color(1f, 1f, 1f, 1.0f).texture(u0, v1).overlay(overlay).light(light).normal(0, 0, -1);
+        consumer.vertex(mat, x1, y1, z).color(1f, 1f, 1f, 1.0f).texture(u1, v1).overlay(overlay).light(light).normal(0, 0, -1);
+        consumer.vertex(mat, x1, y0, z).color(1f, 1f, 1f, 1.0f).texture(u1, v0).overlay(overlay).light(light).normal(0, 0, -1);
+    }
+
+    private void renderLineWithEmotes(MatrixStack matrices,
+                                      TextRenderer textRenderer,
+                                      VertexConsumerProvider consumers,
+                                      String text,
+                                      List<MessageEmote> emotes,
+                                      int color,
+                                      float startX,
+                                      float y,
+                                      int gifSize) {
+        List<MessageEmote> sortedEmotes = MessageEmoteSorting.sortedValid(text, emotes);
+        int cursor = 0;
+        float x = startX;
+
+        for (MessageEmote emote : sortedEmotes) {
+            if (emote.getStartIndex() > cursor) {
+                String segment = text.substring(cursor, emote.getStartIndex());
+                textRenderer.draw(segment,
+                    x,
+                    y,
+                    color,
+                    true,
+                    matrices.peek().getPositionMatrix(),
+                    consumers,
+                    TextRenderer.TextLayerType.POLYGON_OFFSET,
+                    0,
+                    0xF000F0
+                );
+                x += textRenderer.getWidth(segment);
+            }
+
+            Identifier emoteTexture = TwitchEmoteTextureCache.getTextureIdentifier(emote.getProvider(), emote.getEmoteId());
+            int iconSize = emote.displaySize(gifSize);
+            if (emoteTexture != null) {
+                VertexConsumer consumer = RenderLayerCompat.getTextBuffer(consumers, emoteTexture);
+                Matrix4f mat = matrices.peek().getPositionMatrix();
+                int iconX = Math.round(x);
+                int iconY = Math.round(y) - 1;
+                drawQuadIcon(consumer,
+                    mat,
+                    iconX,
+                    iconY,
+                    iconX + iconSize,
+                    iconY + iconSize,
+                    EMOTE_ICON_Z_OFFSET,
+                    0f,
+                    0f,
+                    1f,
+                    1f
+                );
+                x += iconSize + EMOTE_ICON_SPACING;
+            } else if (!"emoji".equals(emote.getProvider())) {
+                // Fallback: show emote code as text while texture is loading/failed
+                String code = emote.getEmoteCode();
+                textRenderer.draw(code,
+                    x,
+                    y,
+                    color,
+                    true,
+                    matrices.peek().getPositionMatrix(),
+                    consumers,
+                    TextRenderer.TextLayerType.POLYGON_OFFSET,
+                    0,
+                    0xF000F0
+                );
+                x += textRenderer.getWidth(code) + EMOTE_ICON_SPACING;
+            } else {
+                x += iconSize + EMOTE_ICON_SPACING;
+            }
+            cursor = emote.getEndIndex() + 1;
+        }
+
+        if (cursor < text.length()) {
+            String tail = text.substring(cursor);
+            textRenderer.draw(tail,
+                x,
+                y,
+                color,
+                true,
+                matrices.peek().getPositionMatrix(),
+                consumers,
+                TextRenderer.TextLayerType.POLYGON_OFFSET,
+                0,
+                0xF000F0
+            );
+        }
+    }
+} 

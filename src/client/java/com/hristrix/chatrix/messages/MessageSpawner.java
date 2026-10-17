@@ -1,0 +1,189 @@
+package com.hristrix.chatrix.messages;
+
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.Vec3d;
+
+/**
+ * Spawns new messages from the queue.
+ */
+public class MessageSpawner {
+    /** 8 seconds at 20 TPS: bounded by the HTTP download timeout to avoid stalling chat indefinitely. */
+    private static final int EMOTE_WAIT_TICKS = 160;
+
+    private final MessageQueue messageQueue;
+    private final MessageLifecycleManager lifecycleManager;
+    private final PinnedMessageInteractionManager pinnedInteractionManager;
+    private volatile boolean paused = false;
+    private int lastSoundTick = -1;
+
+    public MessageSpawner(MessageQueue messageQueue, MessageLifecycleManager lifecycleManager) {
+        this.messageQueue = messageQueue;
+        this.lifecycleManager = lifecycleManager;
+        this.pinnedInteractionManager = new PinnedMessageInteractionManager(lifecycleManager);
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            TwitchEmoteTextureCache.drainUploads(client);
+            if (client.textRenderer != null) {
+                lifecycleManager.warmPendingHistoryLayouts(client.textRenderer, 8);
+            }
+            if (client.player != null && client.world != null) {
+                pinnedInteractionManager.tick(client);
+                lifecycleManager.updateMessages(client);
+                drainReadyQueue(client);
+            }
+        });
+    }
+
+    private void drainReadyQueue(MinecraftClient client) {
+        int tick = lifecycleManager.getTickCounter();
+        MessageQueue.QueuedMessage queued;
+        while ((queued = messageQueue.pollReady(tick)) != null) {
+            spawnQueuedMessage(client, queued, tick);
+        }
+    }
+
+    private void spawnQueuedMessage(MinecraftClient client, MessageQueue.QueuedMessage queued, int tick) {
+        String messageText = queued.text;
+        Integer authorColor = queued.authorColorRgb;
+        var spawnMode = com.hristrix.chatrix.config.ModConfig.getMESSAGE_SPAWN_MODE();
+
+        if (spawnMode == com.hristrix.chatrix.config.MessageSpawnMode.HUD_WIDGET) {
+            var position = Vec3d.ZERO;
+            var message = new Message(
+                messageText, position, tick, 0, 0, authorColor, Vec3d.ZERO, queued.emotes
+            );
+            PinnedMessageStore.tagWithCurrentDimension(message, client);
+            lifecycleManager.addMessage(message);
+        } else {
+            var position = (spawnMode == com.hristrix.chatrix.config.MessageSpawnMode.FRONT_OF_PLAYER)
+                ? MessagePosition.generatePositionInFrontOfPlayer(client)
+                : MessagePosition.generateRandomPosition(client);
+            var playerEyePos = client.player.getEyePos();
+            double dx = playerEyePos.x - position.x;
+            double dy = playerEyePos.y - position.y;
+            double dz = playerEyePos.z - position.z;
+            double distXZ = Math.sqrt(dx * dx + dz * dz);
+            float yaw = (float) (MathHelper.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
+            float pitch = (float) -(MathHelper.atan2(dy, distXZ) * (180.0 / Math.PI));
+            var worldOffset = position.subtract(playerEyePos);
+            var message = new Message(
+                messageText, position, tick, yaw, pitch, authorColor, worldOffset, queued.emotes
+            );
+            PinnedMessageStore.tagWithCurrentDimension(message, client);
+            lifecycleManager.addMessage(message);
+        }
+        playNewMessageSound(tick, platformKeyOf(queued.emotes));
+    }
+
+    /** Platform key from the message's marker emote; null if unknown. */
+    private static String platformKeyOf(java.util.List<MessageEmote> emotes) {
+        if (emotes == null) {
+            return null;
+        }
+        for (MessageEmote emote : emotes) {
+            if ("platform".equals(emote.getProvider())) {
+                return emote.getEmoteId();
+            }
+        }
+        return null;
+    }
+
+    public void enqueueMessage(String message, Integer authorColorRgb, java.util.List<MessageEmote> emotes, int readyAtTick) {
+        if (!paused) {
+            messageQueue.enqueueMessage(
+                message,
+                authorColorRgb,
+                emotes,
+                readyAtTick,
+                readyAtTick + EMOTE_WAIT_TICKS
+            );
+        }
+    }
+
+    public int getTickCounter() {
+        return lifecycleManager.getTickCounter();
+    }
+
+    /**
+     * Sets a new message to display.
+     * @param message message text; an empty string stops display
+     */
+    public void setCurrentMessage(String message) {
+        if (message.isEmpty()) {
+            messageQueue.clear();
+            lifecycleManager.clearAllMessages();
+        } else {
+            enqueueMessage(message, null, java.util.Collections.emptyList(), getTickCounter());
+        }
+    }
+
+    public void setCurrentMessage(String message, Integer authorColorRgb) {
+        if (message.isEmpty()) {
+            messageQueue.clear();
+            lifecycleManager.clearAllMessages();
+        } else {
+            enqueueMessage(message, authorColorRgb, java.util.Collections.emptyList(), getTickCounter());
+        }
+    }
+
+    public void setCurrentMessage(String message, Integer authorColorRgb, java.util.List<MessageEmote> emotes) {
+        if (message.isEmpty()) {
+            messageQueue.clear();
+            lifecycleManager.clearAllMessages();
+        } else {
+            enqueueMessage(message, authorColorRgb, emotes, getTickCounter());
+        }
+    }
+
+    /** Clears pending messages without affecting messages already displayed. */
+    public void clearPendingQueue() {
+        messageQueue.clear();
+    }
+
+    private void playNewMessageSound(int tick, String platformKey) {
+        if (!com.hristrix.chatrix.config.ModConfig.isENABLE_MESSAGE_SOUND()) {
+            return;
+        }
+        if (platformKey != null
+            && !com.hristrix.chatrix.config.ModConfig.isPLATFORM_MESSAGE_SOUND(platformKey)) {
+            return;
+        }
+        if (tick == lastSoundTick) {
+            return;
+        }
+        lastSoundTick = tick;
+
+        float volume = (float) MathHelper.clamp(com.hristrix.chatrix.config.ModConfig.getMESSAGE_SOUND_VOLUME(), 0.0, 1.0);
+        if (volume <= 0.0f) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.player != null) {
+            client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), volume, 1.25f);
+        }
+    }
+
+    public MessageLifecycleManager getLifecycleManager() {
+        return lifecycleManager;
+    }
+
+    public PinnedMessageInteractionManager getPinnedInteractionManager() {
+        return pinnedInteractionManager;
+    }
+
+    public void pause() {
+        paused = true;
+    }
+
+    public void resume() {
+        paused = false;
+    }
+
+    public boolean isPaused() {
+        return paused;
+    }
+}

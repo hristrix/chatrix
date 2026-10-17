@@ -1,0 +1,195 @@
+package com.hristrix.chatrix.ui.gui;
+
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.text.OrderedText;
+import net.minecraft.text.Text;
+import com.hristrix.chatrix.core.MessagePanelConstants;
+import com.hristrix.chatrix.core.text.ChatMessageParser;
+import com.hristrix.chatrix.messages.EmoteTextLayout;
+import com.hristrix.chatrix.messages.Message;
+import com.hristrix.chatrix.messages.MessageEmote;
+import com.hristrix.chatrix.messages.MessagePanelLayout;
+import com.hristrix.chatrix.messages.RoleBadges;
+
+import java.util.List;
+
+/** Calculates compact GUI message card dimensions. */
+public final class MessageCardLayout {
+    public static final int USERNAME_ROW_HEIGHT = 12;
+
+    private MessageCardLayout() {}
+
+    public static int getWrapWidth(int maxAvailableWidth) {
+        return getWrapWidth(maxAvailableWidth, MessagePanelConstants.MESSAGE_WRAP_WIDTH);
+    }
+
+    private static int getWrapWidth(int maxAvailableWidth, int preferredWrapWidth) {
+        return Math.min(
+            preferredWrapWidth,
+            Math.max(40, maxAvailableWidth - MessagePanelConstants.PADDING_X * 2)
+        );
+    }
+
+    public record EmoteBodyLine(List<EmoteTextLayout.LineContent> lines) {}
+
+    public record Layout(
+        List<OrderedText> bodyLines,
+        int width,
+        int height,
+        int contentWidth,
+        EmoteBodyLine emoteBodyLine,
+        int gifDisplaySize
+    ) {
+        public Layout(List<OrderedText> bodyLines, int width, int height, int contentWidth) {
+            this(bodyLines, width, height, contentWidth, null, 0);
+        }
+
+        public Layout(
+            List<OrderedText> bodyLines,
+            int width,
+            int height,
+            int contentWidth,
+            EmoteBodyLine emoteBodyLine
+        ) {
+            this(bodyLines, width, height, contentWidth, emoteBodyLine, 0);
+        }
+    }
+
+    public static Layout compute(TextRenderer textRenderer, Message message, int maxAvailableWidth) {
+        return compute(textRenderer, message, maxAvailableWidth, MessagePanelConstants.MESSAGE_WRAP_WIDTH);
+    }
+
+    private static Layout compute(TextRenderer textRenderer, Message message, int maxAvailableWidth, int preferredWrapWidth) {
+        if (message.hasInlineEmotes()) {
+            return computeWithEmotes(textRenderer, message, maxAvailableWidth, preferredWrapWidth);
+        }
+        return compute(textRenderer, message.getText(), maxAvailableWidth, usernameIconOffset(message), preferredWrapWidth);
+    }
+
+    private static int usernameIconOffset(Message message) {
+        int platformOffset = message.getPlatformIconKey() != null
+            ? MessageEmoteGuiRenderer.PLATFORM_ICON_SIZE + 2
+            : 0;
+        return platformOffset + RoleBadges.guiRowWidth(message.getRoleBadgeKeys().size());
+    }
+
+    public static Layout computeHud(TextRenderer textRenderer, Message message, int maxAvailableWidth) {
+        return compute(textRenderer, message, maxAvailableWidth, MessagePanelLayout.wrapWidth());
+    }
+
+    private static Layout computeWithEmotes(TextRenderer textRenderer, Message message, int maxAvailableWidth, int preferredWrapWidth) {
+        String rawMessageText = message.getText();
+        ChatMessageParser.ParsedMessage parsed = message.getParsed();
+        String bodyText = MessageEmoteGuiRenderer.getBodyText(rawMessageText);
+        List<MessageEmote> bodyEmotes = MessageEmoteGuiRenderer.remapEmotesToBody(rawMessageText, message.getEmotes());
+
+        int wrapWidth = getWrapWidth(maxAvailableWidth, preferredWrapWidth);
+        List<EmoteTextLayout.LineContent> bodyLines = EmoteTextLayout.wrap(
+            s -> textRenderer.getWidth(s.isBlank() ? s : ChatMessageParser.stripFormatting(s)),
+            bodyText,
+            bodyEmotes,
+            MessageEmote.maxIconSize(bodyEmotes) + MessageEmoteGuiRenderer.ICON_SPACING,
+            wrapWidth,
+            0
+        );
+
+        int contentWidth = 0;
+        if (parsed.username() != null) {
+            contentWidth = textRenderer.getWidth(Text.empty().append(parsed.usernameText())) + usernameIconOffset(message);
+        }
+        int gifSize = MessageEmote.fitGifSize(contentWidth);
+        int bodyHeight = 0;
+        boolean sawBody = false;
+        for (EmoteTextLayout.LineContent line : bodyLines) {
+            if (line.isGifLine()) {
+                if (parsed.username() != null || sawBody) {
+                    bodyHeight += MessageEmote.GIF_LINE_GAP;
+                }
+                bodyHeight += gifSize;
+                contentWidth = Math.max(contentWidth, gifSize);
+            } else {
+                int lineWidth = MessageEmoteGuiRenderer.measureLine(textRenderer, line.text(), line.emotes());
+                contentWidth = Math.max(contentWidth, lineWidth);
+                bodyHeight += emoteLineAdvance(textRenderer, line);
+            }
+            sawBody = true;
+        }
+        contentWidth = Math.max(contentWidth, 40);
+
+        int cardWidth = Math.min(maxAvailableWidth, contentWidth + MessagePanelConstants.PADDING_X * 2);
+        int cardHeight = MessagePanelConstants.PADDING_Y * 2;
+        if (parsed.username() != null) {
+            cardHeight += USERNAME_ROW_HEIGHT + 2;
+        }
+        cardHeight += bodyHeight;
+
+        return new Layout(
+            List.of(),
+            cardWidth,
+            cardHeight,
+            contentWidth,
+            new EmoteBodyLine(bodyLines),
+            gifSize
+        );
+    }
+
+    /** Body line height, slightly taller for emotes than plain text. */
+    public static int emoteLineAdvance(TextRenderer textRenderer, EmoteTextLayout.LineContent line) {
+        return emoteLineAdvance(textRenderer, line, 0);
+    }
+
+    public static int emoteLineAdvance(TextRenderer textRenderer, EmoteTextLayout.LineContent line, int gifSize) {
+        if (line.isGifLine() && gifSize > 0) {
+            return gifSize;
+        }
+        return line.hasEmotes() ? MessageEmote.maxIconSize(line.emotes()) + 1 : textRenderer.fontHeight;
+    }
+
+    public static Layout compute(
+        TextRenderer textRenderer,
+        String rawMessageText,
+        int maxAvailableWidth
+    ) {
+        return compute(textRenderer, rawMessageText, maxAvailableWidth, 0, MessagePanelConstants.MESSAGE_WRAP_WIDTH);
+    }
+
+    private static Layout compute(
+        TextRenderer textRenderer,
+        String rawMessageText,
+        int maxAvailableWidth,
+        int usernameIconOffset,
+        int preferredWrapWidth
+    ) {
+        ChatMessageParser.ParsedMessage parsed = ChatMessageParser.parse(rawMessageText);
+        int wrapWidth = getWrapWidth(maxAvailableWidth, preferredWrapWidth);
+
+        List<OrderedText> bodyLines = parsed.bodyPlain().isBlank()
+            ? List.of()
+            : textRenderer.wrapLines(parsed.bodyText(), wrapWidth);
+
+        if (bodyLines.isEmpty() && parsed.username() == null) {
+            bodyLines = textRenderer.wrapLines(Text.literal(rawMessageText), wrapWidth);
+        }
+
+        int contentWidth = 0;
+        if (parsed.username() != null) {
+            contentWidth = textRenderer.getWidth(Text.empty().append(parsed.usernameText())) + usernameIconOffset;
+        }
+        for (OrderedText line : bodyLines) {
+            contentWidth = Math.max(contentWidth, textRenderer.getWidth(line));
+        }
+
+        contentWidth = Math.max(contentWidth, 40);
+        int cardWidth = Math.min(maxAvailableWidth, contentWidth + MessagePanelConstants.PADDING_X * 2);
+
+        int cardHeight = MessagePanelConstants.PADDING_Y * 2;
+        if (parsed.username() != null) {
+            cardHeight += USERNAME_ROW_HEIGHT + 2;
+        }
+        if (!bodyLines.isEmpty()) {
+            cardHeight += bodyLines.size() * textRenderer.fontHeight;
+        }
+
+        return new Layout(bodyLines, cardWidth, cardHeight, contentWidth);
+    }
+}

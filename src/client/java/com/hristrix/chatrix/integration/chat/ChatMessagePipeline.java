@@ -1,0 +1,409 @@
+package com.hristrix.chatrix.integration.chat;
+
+import net.minecraft.client.MinecraftClient;
+import com.hristrix.chatrix.config.ConfigManager;
+import com.hristrix.chatrix.config.ModConfig;
+import com.hristrix.chatrix.filtering.BanwordManager;
+import com.hristrix.chatrix.filtering.BlockedUsernameManager;
+import com.hristrix.chatrix.filtering.FilteringManager;
+import com.hristrix.chatrix.messages.MessageEmote;
+import com.hristrix.chatrix.messages.MessageSpawner;
+import com.hristrix.chatrix.messages.RoleBadges;
+import com.hristrix.chatrix.messages.SevenTVEmoteProvider;
+import com.hristrix.chatrix.messages.TwitchEmoteTextureCache;
+import com.hristrix.chatrix.messages.UnicodeEmojiParser;
+import com.hristrix.chatrix.messages.EmojiTextureCache;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public final class ChatMessagePipeline {
+    /** Readable username colors for platforms that do not supply an author color. */
+    private static final int[] FALLBACK_NICK_COLORS = {
+        0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF,
+        0xFFFF55, 0xFFAA00, 0x00AA00, 0x00AAAA, 0xAA00AA
+    };
+
+    /** 50 ms per tick at 20 TPS; timestampUsec is measured in microseconds. */
+    private static final long MICROS_PER_TICK = 50_000L;
+    /** Do not delay display by more than 10 seconds because of timestamp gaps. */
+    private static final int MAX_GAP_TICKS = 200;
+
+    private final MessageSpawner messageSpawner;
+    private final Map<String, Integer> nameColorCache = new HashMap<>();
+
+    public ChatMessagePipeline(MessageSpawner messageSpawner) {
+        this.messageSpawner = messageSpawner;
+    }
+
+    private record PreparedSpawn(String fullText, Integer authorColorRgb, List<MessageEmote> emotes) {}
+
+    public void process(IncomingChatMessage message) {
+        if (message == null) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) {
+            return;
+        }
+
+        client.execute(() -> {
+            PreparedSpawn prepared = prepare(message);
+            if (prepared != null) {
+                messageSpawner.setCurrentMessage(prepared.fullText(), prepared.authorColorRgb(), prepared.emotes());
+            }
+        });
+    }
+
+    /**
+     * YouTube messages from one poll, sorted by timestamp and displayed at their actual intervals.
+     */
+    public void processYouTubeBatch(List<IncomingChatMessage> batch) {
+        if (batch == null || batch.isEmpty()) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) {
+            return;
+        }
+
+        client.execute(() -> {
+            List<IncomingChatMessage> sorted = new ArrayList<>(batch);
+            sorted.sort(Comparator.comparingLong(m ->
+                m.sourceTimestampMicros() != null ? m.sourceTimestampMicros() : 0L
+            ));
+
+            int baseTick = messageSpawner.getTickCounter();
+            int readyTick = baseTick;
+            long prevTimestampMicros = -1L;
+            boolean spreadByTimestamp = sorted.size() > 1;
+
+            for (IncomingChatMessage message : sorted) {
+                Long timestampMicros = message.sourceTimestampMicros();
+                if (spreadByTimestamp && timestampMicros != null && prevTimestampMicros >= 0) {
+                    long gapMicros = Math.max(0L, timestampMicros - prevTimestampMicros);
+                    int gapTicks = (int) Math.min(gapMicros / MICROS_PER_TICK, MAX_GAP_TICKS);
+                    readyTick += gapTicks;
+                }
+                if (timestampMicros != null) {
+                    prevTimestampMicros = timestampMicros;
+                }
+
+                PreparedSpawn prepared = prepare(message);
+                if (prepared != null) {
+                    messageSpawner.enqueueMessage(
+                        prepared.fullText(),
+                        prepared.authorColorRgb(),
+                        prepared.emotes(),
+                        readyTick
+                    );
+                }
+            }
+        });
+    }
+
+    private PreparedSpawn prepare(IncomingChatMessage message) {
+        String rawText = message.text();
+        boolean hasTwitchGifs = message.platform() == ChatPlatform.TWITCH
+            && message.twitchGifsTag() != null
+            && !message.twitchGifsTag().isBlank();
+        if (rawText == null || rawText.isBlank()) {
+            if (!hasTwitchGifs) {
+                return null;
+            }
+            rawText = "\uFFFC";
+        }
+
+        String platformKey = message.platform().getIconKey();
+        if (!ModConfig.isPLATFORM_SHOW_MESSAGES(platformKey)) {
+            return null;
+        }
+        if (message.eventType().isEvent() && !shouldShowEvent(message)) {
+            return null;
+        }
+
+        String displayName = message.displayName() != null && !message.displayName().isBlank()
+            ? message.displayName()
+            : message.authorLogin();
+        String userLogin = message.authorLogin() != null ? message.authorLogin() : displayName;
+        String filteredText = rawText.replace("͏", "").trim();
+        if (filteredText.isEmpty()) {
+            return null;
+        }
+
+        if (ModConfig.isENABLE_USERNAME_BLOCKLIST()
+            && BlockedUsernameManager.getInstance().isBlocked(displayName, userLogin)) {
+            return null;
+        }
+
+        // Events such as gifts and subscriptions bypass role and spawn-chance filters.
+        boolean isEvent = message.eventType().isEvent();
+
+        if (!isEvent && !message.roles().passesSelectedRoles(
+            ModConfig.isPLATFORM_ROLE_ALL(platformKey),
+            ModConfig.isPLATFORM_ROLE_FOLLOWERS(platformKey),
+            ModConfig.isPLATFORM_ROLE_SUBSCRIBERS(platformKey),
+            ModConfig.isPLATFORM_ROLE_VIP(platformKey),
+            ModConfig.isPLATFORM_ROLE_MODS(platformKey)
+        )) {
+            return null;
+        }
+
+        if (!hasTwitchGifs && FilteringManager.getInstance().fitsRegexp(filteredText)) {
+            return null;
+        }
+
+        var player = MinecraftClient.getInstance().player;
+        if (player == null) {
+            return null;
+        }
+        if (!isEvent) {
+            int chance = ConfigManager.getInstance().getConfigData().getChanceForSpawn();
+            if (chance <= 0) {
+                return null;
+            }
+            if (chance < 100 && player.getRandom().nextInt(100) >= chance) {
+                return null;
+            }
+        }
+
+        if (message.platform() == ChatPlatform.TWITCH) {
+            if (message.twitchRoomId() != null) {
+                SevenTVEmoteProvider.init(message.twitchChannelName(), message.twitchRoomId());
+            }
+        }
+
+        if (!hasTwitchGifs && ModConfig.isENABLE_AUTOMODERATION() && BanwordManager.getInstance().containsBanwords(filteredText)) {
+            filteredText = BanwordManager.getInstance().filterBanwords(filteredText);
+        }
+
+        Integer rgb = message.authorColorRgb();
+        String colorKey = displayName.toLowerCase();
+        if (rgb != null) {
+            nameColorCache.put(colorKey, rgb);
+        } else {
+            rgb = nameColorCache.computeIfAbsent(colorKey, key ->
+                FALLBACK_NICK_COLORS[Math.floorMod(key.hashCode(), FALLBACK_NICK_COLORS.length)]);
+        }
+
+        String colorPrefix = toNearestSectionColor(rgb);
+        String coloredName = colorPrefix + displayName + ":§r ";
+        List<MessageEmote> parsedEmotes = new ArrayList<>();
+
+        boolean twitchRangesIntact = message.platform() == ChatPlatform.TWITCH
+            && filteredText.length() == rawText.length();
+        if (twitchRangesIntact && message.twitchEmotesTag() != null) {
+            parsedEmotes = new ArrayList<>(parseTwitchEmotes(
+                message.twitchEmotesTag(),
+                filteredText,
+                coloredName.length()
+            ));
+        }
+        if (twitchRangesIntact && hasTwitchGifs) {
+            List<MessageEmote> twitchGifs = parseTwitchGifs(
+                message.twitchGifsTag(),
+                filteredText,
+                coloredName.length()
+            );
+            parsedEmotes = new ArrayList<>(UnicodeEmojiParser.mergeNonOverlapping(twitchGifs, parsedEmotes));
+        }
+        if (!parsedEmotes.isEmpty()) {
+            for (MessageEmote emote : parsedEmotes) {
+                TwitchEmoteTextureCache.preload(emote.getProvider(), emote.getEmoteId());
+            }
+        } else if (!message.emotes().isEmpty()) {
+            int bodyOffset = coloredName.length();
+            for (MessageEmote emote : message.emotes()) {
+                parsedEmotes.add(new MessageEmote(
+                    emote.getProvider(),
+                    emote.getEmoteId(),
+                    emote.getEmoteCode(),
+                    emote.getStartIndex() + bodyOffset,
+                    emote.getEndIndex() + bodyOffset
+                ));
+                TwitchEmoteTextureCache.preload(emote.getProvider(), emote.getEmoteId());
+            }
+        }
+
+        String fullText = coloredName + filteredText;
+        if (message.platform() == ChatPlatform.TWITCH) {
+            List<MessageEmote> sevenTvEmotes = SevenTVEmoteProvider.scanForEmotes(fullText, parsedEmotes);
+            if (!sevenTvEmotes.isEmpty()) {
+                List<MessageEmote> allEmotes = new ArrayList<>(parsedEmotes);
+                allEmotes.addAll(sevenTvEmotes);
+                parsedEmotes = UnicodeEmojiParser.mergeNonOverlapping(allEmotes, List.of());
+            }
+        }
+
+        if (ModConfig.isENABLE_COLOR_EMOJIS()) {
+            List<MessageEmote> emojiEmotes = UnicodeEmojiParser.parse(fullText, parsedEmotes);
+            if (!emojiEmotes.isEmpty()) {
+                parsedEmotes = UnicodeEmojiParser.mergeNonOverlapping(parsedEmotes, emojiEmotes);
+                for (MessageEmote emoji : emojiEmotes) {
+                    EmojiTextureCache.preload(emoji.getEmoteId(), emoji.getEmoteCode());
+                }
+            }
+        }
+
+        List<MessageEmote> emotesWithIcon = new ArrayList<>(parsedEmotes);
+        emotesWithIcon.add(new MessageEmote(
+            "platform",
+            message.platform().getIconKey(),
+            "",
+            -1,
+            -1
+        ));
+        if (ModConfig.isSHOW_ROLE_BADGES()) {
+            ChatAuthorRoles roles = message.roles();
+            for (String badgeKey : RoleBadges.keysFor(
+                roles.subscriber(),
+                roles.vip(),
+                roles.moderator(),
+                roles.broadcaster()
+            )) {
+                emotesWithIcon.add(new MessageEmote(RoleBadges.PROVIDER, badgeKey, "", -1, -1));
+            }
+        }
+
+        return new PreparedSpawn(fullText, rgb, emotesWithIcon);
+    }
+
+    /**
+     * Stream events are always shown except TikTok gifts and follows,
+     * which retain separate toggles that are disabled by default.
+     */
+    private static boolean shouldShowEvent(IncomingChatMessage message) {
+        if (message.platform() != ChatPlatform.TIKTOK) {
+            return true;
+        }
+        return switch (message.eventType()) {
+            case GIFT -> ModConfig.isTIKTOK_GIFT_EVENTS();
+            case FOLLOW -> ModConfig.isTIKTOK_FOLLOW_EVENTS();
+            default -> true;
+        };
+    }
+
+    private static List<MessageEmote> parseTwitchEmotes(String emotesTag, String message, int messageStartOffset) {
+        if (emotesTag == null || emotesTag.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<MessageEmote> emotes = new ArrayList<>();
+        String[] emoteParts = emotesTag.split("/");
+        for (String emotePart : emoteParts) {
+            int colonIndex = emotePart.indexOf(':');
+            if (colonIndex <= 0 || colonIndex >= emotePart.length() - 1) {
+                continue;
+            }
+
+            String emoteId = emotePart.substring(0, colonIndex);
+            String[] ranges = emotePart.substring(colonIndex + 1).split(",");
+            for (String range : ranges) {
+                int dashIndex = range.indexOf('-');
+                if (dashIndex <= 0 || dashIndex >= range.length() - 1) {
+                    continue;
+                }
+
+                try {
+                    int start = Integer.parseInt(range.substring(0, dashIndex));
+                    int end = Integer.parseInt(range.substring(dashIndex + 1));
+                    if (start < 0 || end < start || end >= message.length()) {
+                        continue;
+                    }
+
+                    String emoteCode = message.substring(start, end + 1);
+                    emotes.add(new MessageEmote("twitch", emoteId, emoteCode, messageStartOffset + start, messageStartOffset + end));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+
+        return emotes.isEmpty() ? Collections.emptyList() : List.copyOf(emotes);
+    }
+
+    /**
+     * Official IRC {@code gifs} tag: {@code start-end|gifId|url}, with entries separated by commas.
+     * Keep the URL unchanged: Twitch supplies it for the specific GIF.
+     */
+    private static List<MessageEmote> parseTwitchGifs(String gifsTag, String message, int messageStartOffset) {
+        if (gifsTag == null || gifsTag.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<MessageEmote> gifs = new ArrayList<>();
+        for (String part : gifsTag.split(",")) {
+            if (part.isBlank()) {
+                continue;
+            }
+            String[] fields = part.split("\\|", 3);
+            if (fields.length < 3) {
+                continue;
+            }
+            String range = fields[0];
+            String url = fields[2].trim();
+            if (url.isEmpty() || !(url.startsWith("https://") || url.startsWith("http://"))) {
+                continue;
+            }
+
+            int dashIndex = range.indexOf('-');
+            if (dashIndex <= 0 || dashIndex >= range.length() - 1) {
+                continue;
+            }
+
+            try {
+                int start = Integer.parseInt(range.substring(0, dashIndex));
+                int end = Integer.parseInt(range.substring(dashIndex + 1));
+                if (start < 0 || end < start || end >= message.length()) {
+                    continue;
+                }
+
+                String gifCode = message.substring(start, end + 1);
+                gifs.add(new MessageEmote(
+                    MessageEmote.GIF_PROVIDER,
+                    url,
+                    gifCode,
+                    messageStartOffset + start,
+                    messageStartOffset + end
+                ));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        return gifs.isEmpty() ? Collections.emptyList() : List.copyOf(gifs);
+    }
+
+    private static String toNearestSectionColor(int rgb) {
+        String[] codes = {"§0", "§1", "§2", "§3", "§4", "§5", "§6", "§7", "§8", "§9", "§a", "§b", "§c", "§d", "§e", "§f"};
+        int[] colors = {
+            0x000000, 0x0000AA, 0x00AA00, 0x00AAAA,
+            0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
+            0x555555, 0x5555FF, 0x55FF55, 0x55FFFF,
+            0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
+        };
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+        int bestIdx = 10;
+        long bestDist = Long.MAX_VALUE;
+        for (int i = 0; i < colors.length; i++) {
+            int cr = (colors[i] >> 16) & 0xFF;
+            int cg = (colors[i] >> 8) & 0xFF;
+            int cb = colors[i] & 0xFF;
+            long dr = r - cr;
+            long dg = g - cg;
+            long db = b - cb;
+            long dist = dr * dr + dg * dg + db * db;
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestIdx = i;
+            }
+        }
+        return codes[bestIdx];
+    }
+}

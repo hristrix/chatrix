@@ -1,0 +1,76 @@
+package com.hristrix.chatrix.ui.screen;
+
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
+
+/**
+ * Screen over the world without dimming or blur; clicks and drags outside widgets
+ * are forwarded to version-independent {@code onPointer*} handlers.
+ */
+public abstract class PreviewPointerScreen extends Screen {
+    protected static final int POINTER_PRIMARY = 0;
+    protected static final int POINTER_SECONDARY = 1;
+    protected static final int POINTER_OTHER = 2;
+
+    protected PreviewPointerScreen(Component title) {
+        super(title);
+    }
+
+    protected abstract boolean onPointerPressed(double mouseX, double mouseY, int pointer);
+
+    protected abstract boolean onPointerDragged(double mouseX, double mouseY, int pointer, double deltaX, double deltaY);
+
+    protected abstract void onPointerReleased(double mouseX, double mouseY, int pointer);
+
+    /** Consumes clicks before widgets, for example in a clipped part of the panel. */
+    protected boolean isPointerBlocked(double mouseX, double mouseY) {
+        return false;
+    }
+
+    /** Handles clicks before child widgets, for a fixed button over scrolling content. */
+    protected boolean onPriorityClicked(double mouseX, double mouseY, int pointer) {
+        return false;
+    }
+
+    @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (onPriorityClicked(click.x(), click.y(), toPointer(click.button()))) {
+            return true;
+        }
+        if (isPointerBlocked(click.x(), click.y())) {
+            return true;
+        }
+        if (super.mouseClicked(click, doubled)) {
+            return true;
+        }
+        return onPointerPressed(click.x(), click.y(), toPointer(click.button()));
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        if (onPointerDragged(click.x(), click.y(), toPointer(click.button()), deltaX, deltaY)) {
+            return true;
+        }
+        return super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent click) {
+        onPointerReleased(click.x(), click.y(), toPointer(click.button()));
+        return super.mouseReleased(click);
+    }
+
+    private static int toPointer(int button) {
+        if (button == InputConstants.MOUSE_BUTTON_LEFT) {
+            return POINTER_PRIMARY;
+        }
+        return button == InputConstants.MOUSE_BUTTON_RIGHT ? POINTER_SECONDARY : POINTER_OTHER;
+    }
+}

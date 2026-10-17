@@ -1,0 +1,272 @@
+package com.hristrix.chatrix.messages;
+
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.font.TextRenderer;
+import com.hristrix.chatrix.core.MessagePanelConstants;
+import com.hristrix.chatrix.core.text.ChatMessageParser;
+import com.hristrix.chatrix.ui.gui.MessageCardLayout;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Data model for a displayed message.
+ */
+public class Message {
+    private static final AtomicLong NEXT_ID = new AtomicLong(1);
+    /** Preview message age: after the appearance animation but before falling starts. */
+    public static final int PREVIEW_AGE = 10;
+
+    private final long id = NEXT_ID.getAndIncrement();
+    private final String text;
+    private final java.util.List<MessageEmote> emotes;
+    private Vec3d position;
+    private Vec3d previousPosition;
+    private final long spawnTick;
+    private int frozenTicks;
+    private float yaw;
+    private float pitch;
+    private float previousYaw;
+    private float previousPitch;
+    private final Integer authorColorRgb; // null if unknown
+    // Target offset relative to the player's eyes at spawn time, for Follow Player mode.
+    private final Vec3d targetOffsetFromEye;
+    // Current velocity for smooth following.
+    private Vec3d velocity = Vec3d.ZERO;
+    // Lagging base yaw around which the local offset rotates.
+    private float followBasisYaw;
+    private boolean pinned;
+    private boolean preview;
+    private boolean blockCube;
+    private Long historySourceId;
+    private String dimensionKey;
+
+    private volatile MessagePanelLayout.Dimensions cachedWorldLayout;
+    private volatile List<EmoteTextLayout.LineContent> cachedEmoteLines;
+    private volatile MessageCardLayout.Layout cachedHudLayout;
+    private volatile int cachedHudMaxWidth = -1;
+    private volatile MessageCardLayout.Layout cachedHistoryLayout;
+    private volatile int cachedHistoryMaxWidth = -1;
+    private volatile ChatMessageParser.ParsedMessage cachedParsed;
+    private volatile int cachedWrapWidth = -1;
+    
+    public Message(String text, Vec3d position, long spawnTick, float yaw, float pitch) {
+        this(text, position, spawnTick, yaw, pitch, null, Vec3d.ZERO, java.util.Collections.emptyList());
+    }
+
+    public Message(String text, Vec3d position, long spawnTick, float yaw, float pitch, Integer authorColorRgb) {
+        this(text, position, spawnTick, yaw, pitch, authorColorRgb, Vec3d.ZERO, java.util.Collections.emptyList());
+    }
+
+    public Message(String text, Vec3d position, long spawnTick, float yaw, float pitch, Integer authorColorRgb, Vec3d targetOffsetFromEye) {
+        this(text, position, spawnTick, yaw, pitch, authorColorRgb, targetOffsetFromEye, java.util.Collections.emptyList());
+    }
+
+    public Message(String text, Vec3d position, long spawnTick, float yaw, float pitch, Integer authorColorRgb, Vec3d targetOffsetFromEye, java.util.List<MessageEmote> emotes) {
+        this.text = text;
+        this.emotes = emotes == null ? java.util.Collections.emptyList() : java.util.List.copyOf(emotes);
+        this.position = position;
+        this.spawnTick = spawnTick;
+        this.frozenTicks = 0;
+        this.yaw = yaw;
+        this.pitch = pitch;
+        this.previousYaw = yaw;
+        this.previousPitch = pitch;
+        this.authorColorRgb = authorColorRgb;
+        this.targetOffsetFromEye = targetOffsetFromEye;
+        this.followBasisYaw = 0.0f;
+        this.previousPosition = position;
+        this.pinned = false;
+    }
+    
+    public String getText() { 
+        return text; 
+    }
+
+    public java.util.List<MessageEmote> getEmotes() {
+        return emotes;
+    }
+
+    /** Platform pixel icon key for provider "platform", or null. */
+    public String getPlatformIconKey() {
+        for (MessageEmote emote : emotes) {
+            if ("platform".equals(emote.getProvider())) {
+                return emote.getEmoteId();
+            }
+        }
+        return null;
+    }
+
+    /** Author role badge keys for provider "badge", in display order. */
+    public java.util.List<String> getRoleBadgeKeys() {
+        java.util.List<String> keys = null;
+        for (MessageEmote emote : emotes) {
+            if (RoleBadges.PROVIDER.equals(emote.getProvider())) {
+                if (keys == null) {
+                    keys = new java.util.ArrayList<>(4);
+                }
+                keys.add(emote.getEmoteId());
+            }
+        }
+        return keys == null ? java.util.List.of() : keys;
+    }
+
+    /** Whether text contains inline emotes, excluding the platform icon. */
+    public boolean hasInlineEmotes() {
+        for (MessageEmote emote : emotes) {
+            if (emote.getStartIndex() >= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    public Vec3d getPosition() { 
+        return position; 
+    }
+    public void setPosition(Vec3d position) {
+        this.previousPosition = this.position;
+        this.position = position;
+    }
+    
+    public long getSpawnTick() { 
+        return spawnTick; 
+    }
+    
+    public int getFrozenTicks() { 
+        return frozenTicks; 
+    }
+    
+    public void incrementFrozenTicks() {
+        this.frozenTicks++;
+    }
+    
+    public float getYaw() { return yaw; }
+    public void setYaw(float yaw) { this.previousYaw = this.yaw; this.yaw = yaw; }
+    public float getPitch() { return pitch; }
+    public void setPitch(float pitch) { this.previousPitch = this.pitch; this.pitch = pitch; }
+    public Integer getAuthorColorRgb() { return authorColorRgb; }
+    public Vec3d getTargetOffsetFromEye() { return targetOffsetFromEye; }
+    public Vec3d getVelocity() { return velocity; }
+    public void setVelocity(Vec3d velocity) { this.velocity = velocity; }
+    public float getFollowBasisYaw() { return followBasisYaw; }
+    public void setFollowBasisYaw(float followBasisYaw) { this.followBasisYaw = followBasisYaw; }
+    public Vec3d getPreviousPosition() { return previousPosition; }
+    public float getPreviousYaw() { return previousYaw; }
+    public float getPreviousPitch() { return previousPitch; }
+    public boolean isPinned() { return pinned; }
+    public boolean isPreview() { return preview; }
+    public void setPreview(boolean preview) { this.preview = preview; }
+    /** 1x1-block reference cube around the editor preview message. */
+    public boolean hasBlockCube() { return blockCube; }
+    public void setBlockCube(boolean blockCube) { this.blockCube = blockCube; }
+    public void setPinned(boolean pinned) { this.pinned = pinned; }
+    public long getId() { return id; }
+    public Long getHistorySourceId() { return historySourceId; }
+    public void setHistorySourceId(Long historySourceId) { this.historySourceId = historySourceId; }
+    public String getDimensionKey() { return dimensionKey; }
+    public void setDimensionKey(String dimensionKey) { this.dimensionKey = dimensionKey; }
+    public boolean isInDimension(String currentDimensionKey) {
+        return dimensionKey != null && dimensionKey.equals(currentDimensionKey);
+    }
+    
+    /**
+     * Calculates effective message age, accounting for frozen time.
+     * @param currentTick current tick
+     * @return effective message age in ticks
+     */
+    public int getEffectiveAge(int currentTick) {
+        if (preview) {
+            return PREVIEW_AGE;
+        }
+        int baseAge = currentTick - (int)spawnTick;
+        return Math.max(0, baseAge - frozenTicks);
+    }
+
+    public MessagePanelLayout.Dimensions getWorldLayout(TextRenderer textRenderer) {
+        invalidateLayoutIfWrapChanged();
+        MessagePanelLayout.Dimensions cached = cachedWorldLayout;
+        if (cached == null) {
+            cached = MessagePanelLayout.compute(textRenderer, this);
+            cachedWorldLayout = cached;
+        }
+        return cached;
+    }
+
+    public List<EmoteTextLayout.LineContent> getEmoteLines(TextRenderer textRenderer) {
+        if (!hasInlineEmotes()) {
+            return List.of();
+        }
+        invalidateLayoutIfWrapChanged();
+        List<EmoteTextLayout.LineContent> cached = cachedEmoteLines;
+        if (cached == null) {
+            cached = EmoteTextLayout.wrap(
+                s -> textRenderer.getWidth(s),
+                getText(),
+                getEmotes(),
+                MessageEmote.maxIconSize(getEmotes()) + MessagePanelLayout.EMOTE_ICON_SPACING,
+                MessagePanelLayout.wrapWidth(),
+                getWorldLayout(textRenderer).firstLineIconOffset()
+            );
+            cachedEmoteLines = cached;
+        }
+        return cached;
+    }
+
+    public ChatMessageParser.ParsedMessage getParsed() {
+        ChatMessageParser.ParsedMessage parsed = cachedParsed;
+        if (parsed == null) {
+            parsed = ChatMessageParser.parse(text);
+            cachedParsed = parsed;
+        }
+        return parsed;
+    }
+
+    public MessageCardLayout.Layout getHistoryLayout(TextRenderer textRenderer, int maxAvailableWidth) {
+        invalidateLayoutIfWrapChanged();
+        if (cachedHistoryLayout != null && cachedHistoryMaxWidth == maxAvailableWidth) {
+            return cachedHistoryLayout;
+        }
+        TextRenderer fonts = textRenderer;
+        MessageCardLayout.Layout layout = MessageCardLayout.compute(fonts, this, maxAvailableWidth);
+        cachedHistoryLayout = layout;
+        cachedHistoryMaxWidth = maxAvailableWidth;
+        return layout;
+    }
+
+    public void warmHistoryLayout(TextRenderer textRenderer) {
+        if (textRenderer == null || hasWarmedHistoryLayout()) {
+            return;
+        }
+        getParsed();
+        getHistoryLayout(textRenderer, MessagePanelConstants.MESSAGE_WRAP_WIDTH);
+    }
+
+    public boolean hasWarmedHistoryLayout() {
+        return cachedParsed != null
+            && cachedHistoryLayout != null
+            && cachedHistoryMaxWidth == MessagePanelConstants.MESSAGE_WRAP_WIDTH;
+    }
+
+    public MessageCardLayout.Layout getHudLayout(TextRenderer textRenderer, int maxAvailableWidth) {
+        invalidateLayoutIfWrapChanged();
+        if (cachedHudLayout != null && cachedHudMaxWidth == maxAvailableWidth) {
+            return cachedHudLayout;
+        }
+        MessageCardLayout.Layout layout = MessageCardLayout.computeHud(textRenderer, this, maxAvailableWidth);
+        cachedHudLayout = layout;
+        cachedHudMaxWidth = maxAvailableWidth;
+        return layout;
+    }
+
+    private void invalidateLayoutIfWrapChanged() {
+        int wrapWidth = MessagePanelLayout.wrapWidth();
+        if (cachedWrapWidth != wrapWidth) {
+            cachedWorldLayout = null;
+            cachedEmoteLines = null;
+            cachedHudLayout = null;
+            cachedHistoryLayout = null;
+            cachedWrapWidth = wrapWidth;
+        }
+    }
+}

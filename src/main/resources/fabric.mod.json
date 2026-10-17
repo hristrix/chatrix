@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "chatrix",
+  "version": "${version}",
+  "name": "Chatrix",
+  "description": "Display live chat from Twitch, YouTube, Kick, and TikTok in Minecraft — 3D billboards or HUD overlay. In-game settings: ] (default)",
+  "authors": ["Hristrix"],
+  "license": "CC0-1.0",
+  "icon": "assets/chatrix/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.hristrix.chatrix.ChatrixClient"],
+    "modmenu": ["com.hristrix.chatrix.ModMenuIntegration"]
+  },
+  "mixins": [
+    {
+      "config": "chatrix.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${fabric_loader_min}",
+    "minecraft": "${minecraft}",
+    "java": ">=${java_min}",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "another-mod": "*",
+    "modmenu": "*"
+  }
+}

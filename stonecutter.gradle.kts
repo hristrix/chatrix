@@ -1,0 +1,318 @@
+import org.gradle.kotlin.dsl.replace
+
+plugins {
+    id("dev.kikugie.stonecutter")
+}
+
+stonecutter active "1.21.11" /* [SC] DO NOT EDIT */
+
+stonecutter parameters {
+    replacements {
+        string(eval(current.version, "< 1.21.11")) {
+            replace("import net.minecraft.client.render.RenderLayers;", "// RenderLayers added in 1.21.11")
+            replace("return RenderLayers.entityTranslucent(texture);", "return RenderLayer.getEntityTranslucent(texture, false);")
+            replace("return RenderLayers.text(texture);", "return RenderLayer.getText(texture);")
+            replace("camera.getCameraPos()", "camera.getPos()")
+        }
+        string(eval(current.version, ">= 26.1")) {
+            // Packages (imports)
+            replace("net.minecraft.client.MinecraftClient", "net.minecraft.client.Minecraft")
+            replace("net.minecraft.client.gui.DrawContext", "net.minecraft.client.gui.GuiGraphicsExtractor")
+            replace("net.minecraft.client.font.TextRenderer", "net.minecraft.client.gui.Font")
+            replace("net.minecraft.client.gui.screen.Screen", "net.minecraft.client.gui.screens.Screen")
+            replace("net.minecraft.client.gui.screen.ingame.HandledScreen", "net.minecraft.client.gui.screens.inventory.AbstractContainerScreen")
+            replace("net.minecraft.text.Text", "net.minecraft.network.chat.Component")
+            replace("net.minecraft.text.MutableText", "net.minecraft.network.chat.MutableComponent")
+            replace("net.minecraft.text.OrderedText", "net.minecraft.util.FormattedCharSequence")
+            replace("net.minecraft.text.Style", "net.minecraft.network.chat.Style")
+            replace("net.minecraft.text.TextColor", "net.minecraft.network.chat.TextColor")
+            replace("net.minecraft.util.Identifier", "net.minecraft.resources.Identifier")
+            replace("net.minecraft.util.math.Vec3d", "net.minecraft.world.phys.Vec3")
+            replace("net.minecraft.util.Formatting", "net.minecraft.ChatFormatting")
+            replace("net.minecraft.client.gui.widget.ButtonWidget", "net.minecraft.client.gui.components.Button")
+            replace("net.minecraft.client.gui.widget.TextFieldWidget", "net.minecraft.client.gui.components.EditBox")
+            replace("net.minecraft.client.gui.widget.SliderWidget", "net.minecraft.client.gui.components.AbstractSliderButton")
+            replace("net.minecraft.client.gui.Click", "net.minecraft.client.input.MouseButtonEvent")
+            replace("extends SliderWidget", "extends AbstractSliderButton")
+            replace("extends TextFieldWidget", "extends EditBox")
+            replace("(TextFieldWidget ", "(EditBox ")
+            replace("new TextFieldWidget(", "new EditBox(")
+            replace(" TextFieldWidget ", " EditBox ")
+            replace("net.minecraft.client.input.KeyInput", "net.minecraft.client.input.KeyEvent")
+            replace("net.minecraft.client.util.math.MatrixStack", "com.mojang.blaze3d.vertex.PoseStack")
+            replace("net.minecraft.client.render.RenderLayer", "net.minecraft.client.renderer.rendertype.RenderType")
+            replace("net.minecraft.client.render.VertexConsumerProvider", "net.minecraft.client.renderer.MultiBufferSource")
+            replace("net.minecraft.client.render.VertexConsumer", "com.mojang.blaze3d.vertex.VertexConsumer")
+            replace("net.minecraft.util.math.RotationAxis", "com.mojang.math.Axis")
+            replace("net.minecraft.client.render.OverlayTexture", "net.minecraft.client.renderer.texture.OverlayTexture")
+            replace("net.minecraft.client.gl.RenderPipelines", "net.minecraft.client.renderer.RenderPipelines")
+            replace("net.minecraft.util.math.MathHelper", "net.minecraft.util.Mth")
+            replace("net.minecraft.client.network.ClientPlayerEntity", "net.minecraft.client.player.LocalPlayer")
+            replace("net.minecraft.client.network.ServerInfo", "net.minecraft.client.multiplayer.ServerData")
+            replace("net.minecraft.util.WorldSavePath", "net.minecraft.world.level.storage.LevelResource")
+            replace("net.minecraft.client.texture.NativeImage", "com.mojang.blaze3d.platform.NativeImage")
+            replace("net.minecraft.client.texture.NativeImageBackedTexture", "net.minecraft.client.renderer.texture.DynamicTexture")
+            replace("net.minecraft.util.math.Box", "net.minecraft.world.phys.AABB")
+            replace("net.minecraft.util.math.random.Random", "net.minecraft.util.RandomSource")
+            replace("net.minecraft.client.gui.Element", "net.minecraft.client.gui.components.events.GuiEventListener")
+            replace("net.minecraft.client.option.KeyBinding", "net.minecraft.client.KeyMapping")
+            replace("net.minecraft.client.util.InputUtil", "com.mojang.blaze3d.platform.InputConstants")
+            replace("net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper", "net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper")
+            replace("net.minecraft.sound.SoundEvents", "net.minecraft.sounds.SoundEvents")
+            replace("net.minecraft.client.Mouse", "net.minecraft.client.MouseHandler")
+            replace("net.minecraft.client.input.MouseInput", "net.minecraft.client.input.MouseButtonInfo")
+            replace("net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents", "net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents")
+            replace("net.fabricmc.fabric.api.client.command.v2.ClientCommandManager", "net.fabricmc.fabric.api.client.command.v2.ClientCommands")
+
+            // Types
+            replace("Vec3d", "Vec3")
+            replace("MinecraftClient", "Minecraft")
+            replace("DrawContext", "GuiGraphicsExtractor")
+            replace("TextRenderer", "Font")
+            replace("MutableText", "MutableComponent")
+            replace("OrderedText", "FormattedCharSequence")
+            replace(" ButtonWidget ", " Button ")
+            replace("new ButtonWidget(", "new Button(")
+            replace("<ButtonWidget>", "<Button>")
+            replace("(ButtonWidget ", "(Button ")
+            replace("KeyInput", "KeyEvent")
+            replace("(Click click", "(MouseButtonEvent click")
+            replace("MatrixStack", "PoseStack")
+            replace("public static RenderLayer", "public static RenderType")
+            replace("RenderLayer get", "RenderType get")
+            replace("RenderLayer textLayer", "RenderType textLayer")
+            replace("instanceof RenderLayer", "instanceof RenderType")
+            replace("== RenderLayer.class", "== RenderType.class")
+            replace("RenderLayer.class.isAssignableFrom", "RenderType.class.isAssignableFrom")
+            replace("VertexConsumerProvider", "MultiBufferSource")
+            replace("ClientPlayerEntity", "LocalPlayer")
+
+            // Component helpers
+            replace("Text.literal", "Component.literal")
+            replace("Text.translatable", "Component.translatable")
+            replace("Text.empty", "Component.empty")
+            replace("Text.of(", "Component.literal(")
+            replace("Formatting.byCode", "ChatFormatting.getByCode")
+            replace("Formatting.", "ChatFormatting.")
+            replace(".formatted(", ".withStyle(")
+            replace(": Text ", ": Component ")
+            replace(": Text;", ": Component;")
+            replace(": Text)", ": Component)")
+            replace(", Text ", ", Component ")
+            replace("(Text ", "(Component ")
+            replace("<Text>", "<Component>")
+            replace("<Text,", "<Component,")
+            replace("public Text ", "public Component ")
+            replace("protected abstract Text ", "protected abstract Component ")
+            replace("protected Text ", "protected Component ")
+            replace("private Text ", "private Component ")
+            replace("private static Text ", "private static Component ")
+            replace("        Text ", "        Component ")
+            replace("MutableText ", "MutableComponent ")
+
+            // Screen / widget API
+            replace("public void render(DrawContext context, int mouseX, int mouseY, float delta)", "public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta)")
+            replace("public void render(DrawContext context, Font textRenderer, int mouseX, int mouseY)", "public void extractRenderState(GuiGraphicsExtractor context, Font textRenderer, int mouseX, int mouseY)")
+            replace("public boolean shouldPause()", "public boolean isPauseScreen()")
+            replace("super.render(context, mouseX, mouseY, delta)", "super.extractRenderState(context, mouseX, mouseY, delta)")
+            replace(".renderWidget(", ".extractWidgetRenderState(")
+            replace("addDrawableChild", "addRenderableWidget")
+            replace(".dimensions(", ".bounds(")
+            replace("this.textRenderer", "this.font")
+            replace("this.client", "this.minecraft")
+            replace("client.textRenderer", "client.font")
+            replace("client.world", "client.level")
+            replace("client.currentScreen", "client.screen")
+            replace("client.inGameHud", "client.gui")
+            replace("inputField.getText()", "inputField.getValue()")
+            replace("inputField.setText(", "inputField.setValue(")
+            replace("channelNameField.setText(", "channelNameField.setValue(")
+            replace("youtubeChannelField.setText(", "youtubeChannelField.setValue(")
+            replace("kickChannelField.setText(", "kickChannelField.setValue(")
+            replace("tiktokUsernameField.setText(", "tiktokUsernameField.setValue(")
+            replace("field.setText(", "field.setValue(")
+            replace("field.getText()", "field.getValue()")
+            replace("streamKeyField.setText(", "streamKeyField.setValue(")
+            replace("streamKeyField.getText()", "streamKeyField.getValue()")
+            replace("identityField.setText(", "identityField.setValue(")
+            replace("identityField.getText()", "identityField.getValue()")
+            replace("field.setChangedListener", "field.setResponder")
+            replace("channelNameField.setChangedListener", "channelNameField.setResponder")
+            replace("setChangedListener", "setResponder")
+
+            // GuiGraphicsExtractor drawing
+            replace("public void close()", "public void onClose()")
+            replace("this.close()", "this.onClose()")
+            replace("context.drawTooltip(this.textRenderer, ", "context.setTooltipForNextFrame(")
+            replace("context.drawTextWithShadow(", "context.text(")
+            replace("ctx.drawTextWithShadow(", "ctx.text(")
+            replace("context.drawCenteredTextWithShadow(", "context.centeredText(")
+            replace("context.drawTexture(", "context.blit(")
+
+            // Font API
+            replace("this.textRenderer.wrapLines(", "this.font.split(")
+            replace("this.textRenderer.fontHeight", "this.font.lineHeight")
+            replace("this.textRenderer.getWidth(", "this.font.width(")
+            replace("textRenderer.wrapLines(", "textRenderer.split(")
+            replace("textRenderer.fontHeight", "textRenderer.lineHeight")
+            replace("textRenderer.getWidth(", "textRenderer.width(")
+            replace("textRenderer.draw(", "textRenderer.drawInBatch(")
+            replace("TextRenderer.TextLayerType.POLYGON_OFFSET", "Font.DisplayMode.POLYGON_OFFSET")
+
+            // World / level rendering
+            replace("WorldRenderEvents.AFTER_ENTITIES", "LevelRenderEvents.AFTER_SOLID_FEATURES")
+            replace("context.matrices()", "context.poseStack()")
+            replace("context.consumers()", "context.bufferSource()")
+
+            // Pose stack
+            replace("matrices.push()", "matrices.pushPose()")
+            replace("matrices.pop()", "matrices.popPose()")
+            replace("matrices.peek().getPositionMatrix()", "matrices.last().pose()")
+            replace("matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-", "matrices.mulPose(Axis.YP.rotationDegrees(-")
+            replace("matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(", "matrices.mulPose(Axis.XP.rotationDegrees(")
+            replace("matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(", "matrices.mulPose(Axis.ZP.rotationDegrees(")
+
+            // Vertex consumer (3D quads)
+            replace("consumer.vertex(matrix,", "consumer.addVertex(matrix,")
+            replace(".vertex(mat,", ".addVertex(mat,")
+            replace(".color(", ".setColor(")
+            replace(".texture(", ".setUv(")
+            replace(".overlay(", ".setOverlay(")
+            replace(".light(", ".setLight(")
+            replace(".normal(", ".setNormal(")
+
+            // RenderLayerCompat host
+            replace("import net.minecraft.client.render.RenderLayers;", "import net.minecraft.client.renderer.rendertype.RenderTypes;")
+            replace("return RenderLayers.entityTranslucent(texture);", "return RenderTypes.entityTranslucent(texture);")
+            replace("return RenderLayers.text(texture);", "return RenderTypes.text(texture);")
+            replace("RenderLayer.class", "RenderType.class")
+            replace("RenderLayer renderLayer", "RenderType renderLayer")
+            replace("== RenderType.class", "== RenderType.class")
+
+            // Misc
+            replace("Identifier.of(", "Identifier.fromNamespaceAndPath(")
+            replace("cameraPos.getX()", "cameraPos.x")
+            replace("cameraPos.getY()", "cameraPos.y")
+            replace("cameraPos.getZ()", "cameraPos.z")
+            replace("getMainHandStack()", "getMainHandItem()")
+            replace("swingHand(", "swing(")
+            replace("getActiveHand()", "getUsedItemHand()")
+            replace("wasPressed()", "consumeClick()")
+            replace("getCurrentServerEntry()", "getCurrentServer()")
+            replace("Category.create(", "Category.register(")
+            replace("for (Element child", "for (GuiEventListener child")
+            replace("MathHelper.", "Mth.")
+            replace("getEyePos()", "getEyePosition()")
+            replace("getRotationVec(", "getViewVector(")
+            replace("setDimensions(", "setSize(")
+            replace("ClientCommandManager.", "ClientCommands.")
+            replace("SoundEvents.BLOCK_NOTE_BLOCK_PLING", "SoundEvents.NOTE_BLOCK_PLING")
+            replace("ButtonWidget.builder", "Button.builder")
+            replace("ButtonWidget.class", "Button.class")
+            replace("List<ButtonWidget>", "List<Button>")
+            replace("ArrayList<ButtonWidget>", "ArrayList<Button>")
+            replace("public static Text ", "public static Component ")
+            replace("ServerInfo ", "ServerData ")
+            replace("NativeImageBackedTexture", "DynamicTexture")
+            replace("new NativeImageBackedTexture(", "new DynamicTexture(")
+            replace("WorldSavePath", "LevelResource")
+            replace("private static RenderLayer ", "private static RenderType ")
+            replace("client.getServer()", "client.getSingleplayerServer()")
+            replace("serverInfo.address", "serverInfo.ip")
+            replace("getRegistryKey().getValue().toString()", "dimension().identifier().toString()")
+            replace("getYaw()", "getYRot()")
+            replace("getWindow().getFramebufferWidth()", "getWindow().getWidth()")
+            replace("getWindow().getFramebufferHeight()", "getWindow().getHeight()")
+            replace("getWindow().getScaledWidth()", "getWindow().getGuiScaledWidth()")
+            replace("getWindow().getScaledHeight()", "getWindow().getGuiScaledHeight()")
+            replace("client.options.getFov().getValue()", "client.options.fov().get()")
+            replace(".dotProduct(", ".dot(")
+            replace("Minecraft.getInstance().world", "Minecraft.getInstance().level")
+            replace("net.minecraft.client.texture.AbstractTexture", "net.minecraft.client.renderer.texture.AbstractTexture")
+            replace("getTextureManager().registerTexture(", "getTextureManager().register(")
+            replace("getCamera()", "getMainCamera()")
+            replace("camera.getCameraPos()", "camera.position()")
+            replace("context.createNewRootLayer()", "context.nextStratum()")
+            replace("client.player.sendMessage(Text.of(message), false)", "client.player.sendSystemMessage(Component.literal(message))")
+            replace("MessageCardLayout.compute(textRenderer,", "MessageCardLayout.compute(this.font,")
+            replace("instanceof HandledScreen", "instanceof AbstractContainerScreen")
+            replace("instanceof ButtonWidget", "instanceof Button")
+            replace("((ButtonWidget)", "((Button)")
+            replace("instanceof TextFieldWidget", "instanceof EditBox")
+            replace("((TextFieldWidget)", "((EditBox)")
+            replace("getSavePath(WorldSavePath.ROOT)", "getServerDirectory()")
+            replace("net.minecraft.client.renderer.texture.OverlayTexture.DEFAULT_UV", "net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY")
+            replace("OverlayTexture.DEFAULT_UV", "OverlayTexture.NO_OVERLAY")
+            replace("row.field.render(context, mouseX, mouseY, delta)", "row.field.extractRenderState(context, mouseX, mouseY, delta)")
+            replace("widget.render(context, mouseX, mouseY, delta)", "widget.extractRenderState(context, mouseX, mouseY, delta)")
+            replace("this.close();", "this.onClose();")
+            replace("toTarget.multiply(", "toTarget.scale(")
+            replace("lookVec.multiply(", "lookVec.scale(")
+            replace("localDir.multiply(", "localDir.scale(")
+            replace("dir.multiply(", "dir.scale(")
+            replace("localYAxisWorld.multiply(", "localYAxisWorld.scale(")
+            replace("new Box(", "new AABB(")
+            replace("Minecraft.getInstance().textRenderer", "Minecraft.getInstance().font")
+            replace("getSaveProperties().getLevelName()", "getServerDirectory().getFileName().toString()")
+            replace("btn -> this.close()", "btn -> this.onClose()")
+            replace("btn -> close()", "btn -> onClose()")
+            replace("@Override\n    public void close()", "@Override\n    public void onClose()")
+        }
+        string(eval(current.version, "< 1.21")) {
+            replace("Identifier.of(", "new Identifier(")
+            replace(
+                "Thread.ofVirtual().name(\"TikTokWss-\" + roomId).start(",
+                "daemon(\"TikTokWss-\" + roomId, "
+            )
+            replace(
+                "RenderLayer.getEntityTranslucent(texture, false)",
+                "RenderLayer.getEntityTranslucent(texture)"
+            )
+            replace(
+                "public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount)",
+                "public boolean mouseScrolled(double mouseX, double mouseY, double verticalAmount)"
+            )
+            replace(
+                "super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)",
+                "super.mouseScrolled(mouseX, mouseY, verticalAmount)"
+            )
+            replace(
+                "return Character.isExtendedPictographic(codePoint);",
+                "return isExtendedPictographic(codePoint);"
+            )
+        }
+        // One-way: a reverse swap would keep the longer 1.20.1 form and hide
+        // the 26.x `.setNormal(` / `setSize(` replacements.
+        if (eval(current.version, "< 1.21")) {
+            string(true) {
+                replace(".normal(0, 0, -1);", ".normal(0, 0, -1).next();")
+                replace("card.toggle.setDimensions(TOGGLE_BUTTON_WIDTH, CONTROL_HEIGHT);", "card.toggle.setWidth(TOGGLE_BUTTON_WIDTH);")
+                replace("card.settings.setDimensions(CARD_SETTINGS_WIDTH, CONTROL_HEIGHT);", "card.settings.setWidth(CARD_SETTINGS_WIDTH);")
+                replace("historyButton.setDimensions(historyW, FOOTER_BUTTON_HEIGHT);", "historyButton.setWidth(historyW);")
+                replace("chatToggleButton.setDimensions(chatW, FOOTER_BUTTON_HEIGHT);", "chatToggleButton.setWidth(chatW);")
+                replace("doneButton.setDimensions(doneW, FOOTER_BUTTON_HEIGHT);", "doneButton.setWidth(doneW);")
+            }
+        }
+        string(eval(current.version, ">= 26.2")) {
+            replace("getMainCamera()", "mainCamera()")
+            replace("client.inGameHud.setOverlayMessage", "client.gui.hud.setOverlayMessage")
+            replace("client.setScreen(", "client.setScreenAndShow(")
+            replace("this.minecraft.setScreen(", "this.minecraft.setScreenAndShow(")
+            replace("minecraft.setScreen(", "minecraft.setScreenAndShow(")
+            replace("Minecraft.getInstance().setScreen(", "Minecraft.getInstance().setScreenAndShow(")
+            replace("client.screen", "client.gui.screen()")
+            replace("minecraft.screen", "minecraft.gui.screen()")
+        }
+        string(eval(current.version, ">= 26.3")) {
+            // 26.3 dropped GLFW for SDL. Key codes live on InputConstants.
+            replace("import org.lwjgl.glfw.GLFW;", "import com.mojang.blaze3d.platform.InputConstants;")
+            replace("GLFW.GLFW_KEY_ESCAPE", "InputConstants.KEY_ESCAPE")
+            replace("GLFW.GLFW_KEY_RIGHT_BRACKET", "InputConstants.KEY_RBRACKET")
+            replace("GLFW.GLFW_KEY_LEFT_BRACKET", "InputConstants.KEY_LBRACKET")
+            replace("GLFW.GLFW_KEY_BACKSLASH", "InputConstants.KEY_BACKSLASH")
+            // SDL mouse buttons: left is 1, not GLFW's 0.
+            replace("click.button() == 0", "click.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT")
+            replace("if (button != 0)", "if (button != com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT)")
+        }
+    }
+}
