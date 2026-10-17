@@ -10,4 +10,4 @@ Requires Fabric Loader and Fabric API. Choose the matching jar for Minecraft 1.2
 
 Press `]` for settings, configure channels, then press `[` to connect. Run `/chatrix test Hello!` to try a message without a live stream. `/chatrix help` lists commands.
 
-Maintained by Hristrix. CC0-1.0; source attribution is recorded in ATTRIBUTION.md.
+Maintained by Hristrix. Licensed under CC0-1.0.

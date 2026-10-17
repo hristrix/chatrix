@@ -1,5 +1,10 @@
 # Chatrix changelog
 
+## Translation update
+
+- Translate the Russian interface into Russian and add Bulgarian.
+- Preserve existing translations when synchronizing locale keys.
+
 ## Branding update
 
 - Use the supplied Chatrix chat-bubble logo as the mod icon and in the README.
@@ -28,9 +33,9 @@
 - Added a logo and replacement interface, badge, pin, and platform icons.
 - Added `/chatrix` as the primary command.
 - Translated Russian comments and command text to English.
-- Made the Russian locale use English strings and the bundled filter vocabulary use English words.
+- Set the bundled filter vocabulary to English words.
 - Updated installation, development, build, and rendering documentation.
 - Added a build script and CI configuration for Fabric 1.21.10 through 26.3.
 - Fixed 26.x screen-close and history-tooltip compatibility conversions.
 
-Initial code provenance is recorded in ATTRIBUTION.md. Live services and in-game behavior require separate runtime verification.
+Live services and in-game behavior require separate runtime verification.

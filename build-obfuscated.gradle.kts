@@ -86,8 +86,7 @@ if (stonecutter.current.isActive) {
     }
 }
 
-// Include the project license and source attribution in distributed jars.
+// Include the project license in distributed jars.
 tasks.withType<Jar>().configureEach {
     from(rootProject.file("LICENSE"))
-    from(rootProject.file("ATTRIBUTION.md"))
 }

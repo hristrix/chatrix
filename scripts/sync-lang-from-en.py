@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add missing Chatrix locale keys, using English for the Russian locale."""
+"""Add missing Chatrix locale keys without replacing existing translations."""
 
 import json
 from pathlib import Path
@@ -14,7 +14,7 @@ def main() -> None:
             continue
         existing = json.loads(path.read_text(encoding="utf-8"))
         merged = {
-            key: english[key] if path.name == "ru_ru.json" else existing.get(key, english[key])
+            key: existing.get(key, english[key])
             for key in english
         }
         path.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -33,7 +33,7 @@ Settings and saved messages use Chatrix storage. Legacy migration paths do not t
 
 ## Language and assets
 
-Write comments, logs, and documentation in English. Put new user-facing UI strings in `assets/chatrix/lang/en_us.json` under `chatrix.*` keys. Run `python scripts/sync-lang-from-en.py` to add missing English fallback keys to bundled locales. The Russian locale deliberately mirrors English.
+Write comments, logs, and documentation in English. Put new user-facing UI strings in `assets/chatrix/lang/en_us.json` under `chatrix.*` keys. Run `python scripts/sync-lang-from-en.py` to add missing English fallback keys to bundled locales, preserving existing translations. Translate new keys in each locale, including Russian (`ru_ru`) and Bulgarian (`bg_bg`), and preserve formatting placeholders such as `%s`.
 
 Keep texture dimensions compatible with rendering call sites. The logo is `assets/chatrix/icon.png`; controls, badges, and platform icons live under `textures/`.
 

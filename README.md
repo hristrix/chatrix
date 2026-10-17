@@ -117,8 +117,8 @@ Start with [BUILD.md](BUILD.md) to build your own jars, [DEVELOPING.md](DEVELOPI
 
 The Java package and Maven group are `com.hristrix.chatrix`; the mod ID and resource namespace are `chatrix`.
 
-Comments and developer docs are in English. Russian Minecraft installations also use English UI text, while the other bundled translations remain available. The default blocked-word list is English, and you can customize it in game.
+Comments and developer docs are in English. The interface includes English, Bulgarian, Russian, German, Spanish, French, and Simplified Chinese translations. The default blocked-word list is English, and you can customize it in game.
 
 ## License
 
-Chatrix uses **CC0-1.0**. You can find the full terms in [LICENSE](LICENSE) and the project's source credits in [ATTRIBUTION.md](ATTRIBUTION.md).
+Chatrix uses **CC0-1.0**. You can find the full terms in [LICENSE](LICENSE).
